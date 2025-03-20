@@ -348,7 +348,7 @@ namespace KG_DLI6_NET_CORE.Services
             plt.Title("Точность репликации бюджета (2023 г.)");
             
             // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, "Fig5-budget replication quality.pdf");
+            var outputPath = Path.Combine(_outputPath, "Fig5-budget replication quality.png");
             plt.SaveFig(outputPath);
             
             _logger.LogInformation($"График точности репликации бюджета сохранен в: {outputPath}");
@@ -408,7 +408,7 @@ namespace KG_DLI6_NET_CORE.Services
             plt.Title("Гистограмма коэффициента репликации (0 = идеальная репликация)");
             
             // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, "Fig6-budget replication histogram.pdf");
+            var outputPath = Path.Combine(_outputPath, "Fig6-budget replication histogram.png");
             plt.SaveFig(outputPath);
             
             _logger.LogInformation($"Гистограмма коэффициента репликации сохранена в: {outputPath}");
