@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using KG_DLI6_NET_CORE.Models;
 using ScottPlot;
 
@@ -381,8 +382,14 @@ namespace KG_DLI6_NET_CORE.Services
         {
             var filePath = Path.Combine(_workingPath, fileName);
             _logger.LogInformation($"Сохранение данных в: {filePath}");
-            
-            string json = JsonSerializer.Serialize(data);
+
+            var options = new JsonSerializerOptions
+            {
+                NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+                WriteIndented = true
+            };
+
+            string json = JsonSerializer.Serialize(data, options);
             await File.WriteAllTextAsync(filePath, json);
             
             _logger.LogInformation("Данные успешно сохранены");
