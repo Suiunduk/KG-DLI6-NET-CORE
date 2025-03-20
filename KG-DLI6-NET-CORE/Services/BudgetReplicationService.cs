@@ -18,15 +18,15 @@ namespace KG_DLI6_NET_CORE.Services
         // Словарь цветов для областей, аналогичный Python-коду
         private readonly Dictionary<string, System.Drawing.Color> _regionColors = new()
         {
-            { "Баткенская область", System.Drawing.Color.Red },
-            { "Бишкекский горкенеш", System.Drawing.Color.Blue },
-            { "Чуйская область", System.Drawing.Color.Green },
-            { "Иссык-Кульская область", System.Drawing.Color.Black },
-            { "Джалал-Абадская область", System.Drawing.Color.Magenta },
-            { "Нарынская область", System.Drawing.Color.Green },
-            { "Ошская область", System.Drawing.Color.Yellow },
-            { "Таласская область", System.Drawing.Color.Cyan },
-            { "Ошский горкенеш", System.Drawing.Color.Black }
+            { "Баткенская обл.", System.Drawing.Color.Red },
+            { "Бишкек г.", System.Drawing.Color.Blue },
+            { "Чуйская обл.", System.Drawing.Color.Green },
+            { "Иссык-Кульская обл.", System.Drawing.Color.Black },
+            { "Джалал-Абадская обл.", System.Drawing.Color.Magenta },
+            { "Нарынская обл.", System.Drawing.Color.Green },
+            { "Ошская обл.", System.Drawing.Color.Yellow },
+            { "Таласская обл.", System.Drawing.Color.Cyan },
+            { "Ош г.", System.Drawing.Color.Black }
         };
 
         public BudgetReplicationService(ILogger<BudgetReplicationService> logger)
@@ -348,7 +348,7 @@ namespace KG_DLI6_NET_CORE.Services
             plt.Title("Точность репликации бюджета (2023 г.)");
             
             // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, "Fig5-budget replication quality.png");
+            var outputPath = Path.Combine(_outputPath, "Fig5-budget replication quality.pdf");
             plt.SaveFig(outputPath);
             
             _logger.LogInformation($"График точности репликации бюджета сохранен в: {outputPath}");
@@ -408,7 +408,7 @@ namespace KG_DLI6_NET_CORE.Services
             plt.Title("Гистограмма коэффициента репликации (0 = идеальная репликация)");
             
             // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, "Fig6-budget replication histogram.png");
+            var outputPath = Path.Combine(_outputPath, "Fig6-budget replication histogram.pdf");
             plt.SaveFig(outputPath);
             
             _logger.LogInformation($"Гистограмма коэффициента репликации сохранена в: {outputPath}");
