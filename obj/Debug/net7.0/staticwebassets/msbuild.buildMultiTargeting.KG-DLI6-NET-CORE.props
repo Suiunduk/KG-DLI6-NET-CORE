@@ -1,0 +1,3 @@
+﻿<Project>
+  <Import Project="../build/KG-DLI6-NET-CORE.props" />
+</Project>
