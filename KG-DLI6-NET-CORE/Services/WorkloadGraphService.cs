@@ -1,5 +1,8 @@
 using System.Text.Json;
-using ScottPlot;
+using OxyPlot;
+using OxyPlot.Axes;
+using OxyPlot.Series;
+using OxyPlot.Annotations;
 using KG_DLI6_NET_CORE.Models;
 
 namespace KG_DLI6_NET_CORE.Services
@@ -10,18 +13,18 @@ namespace KG_DLI6_NET_CORE.Services
         private readonly string _workingPath;
         private readonly string _outputPath;
         
-        // Словарь цветов для областей, аналогичный Python-коду
-        private readonly Dictionary<string, System.Drawing.Color> _regionColors = new()
+        // Словарь цветов для областей
+        private readonly Dictionary<string, OxyColor> _regionColors = new()
         {
-            { "Баткенская область", System.Drawing.Color.Red },
-            { "Бишкекский горкенеш", System.Drawing.Color.Blue },
-            { "Чуйская область", System.Drawing.Color.Green },
-            { "Иссык-Кульская область", System.Drawing.Color.Black },
-            { "Джалал-Абадская область", System.Drawing.Color.Magenta },
-            { "Нарынская область", System.Drawing.Color.Green },
-            { "Ошская область", System.Drawing.Color.Yellow },
-            { "Таласская область", System.Drawing.Color.Cyan },
-            { "Ошский горкенеш", System.Drawing.Color.Black }
+            { "Баткенская обл.", OxyColors.Red },
+            { "Бишкек г.", OxyColors.Blue },
+            { "Чуйская обл.", OxyColors.Green },
+            { "Иссык-Кульская обл.", OxyColors.Black },
+            { "Джалал-Абадская обл.", OxyColors.Magenta },
+            { "Нарынская обл.", OxyColors.Green },
+            { "Ошская обл.", OxyColors.Yellow },
+            { "Таласская обл.", OxyColors.Cyan },
+            { "Ош г.", OxyColors.Black }
         };
 
         public WorkloadGraphService(ILogger<WorkloadGraphService> logger)
@@ -31,7 +34,6 @@ namespace KG_DLI6_NET_CORE.Services
             _workingPath = Path.Combine(Directory.GetCurrentDirectory(), "working");
             _outputPath = Path.Combine(Directory.GetCurrentDirectory(), "output");
             
-            // Создаем директории, если они не существуют
             Directory.CreateDirectory(_workingPath);
             Directory.CreateDirectory(_outputPath);
         }
@@ -40,14 +42,12 @@ namespace KG_DLI6_NET_CORE.Services
         {
             _logger.LogInformation("Начало создания графиков рабочей нагрузки");
             
-            // Загрузка данных
             var workloadData = await LoadWorkloadDataAsync();
             var upMax = await LoadParameterAsync("upmax_value");
             var downMax = await LoadParameterAsync("downmax_value");
             
             _logger.LogInformation($"Загружены параметры: upMax = {upMax}, downMax = {downMax}");
             
-            // Создание графиков
             await CreateWorkloadWithoutLimitsGraphAsync(workloadData);
             await CreateWorkloadWithLimitsGraphAsync(workloadData, upMax, downMax);
             
@@ -66,7 +66,52 @@ namespace KG_DLI6_NET_CORE.Services
             }
             
             var json = await File.ReadAllTextAsync(filePath);
-            return JsonSerializer.Deserialize<Dictionary<int, WorkloadData>>(json);
+            _logger.LogInformation($"Размер прочитанных данных: {json.Length} байт");
+            
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                _logger.LogError("Файл пуст");
+                throw new InvalidOperationException("Файл с данными пуст");
+            }
+
+            try
+            {
+                var data = JsonSerializer.Deserialize<Dictionary<int, WorkloadData>>(json);
+                _logger.LogInformation($"Данные успешно десериализованы. Количество записей: {data?.Count ?? 0}");
+                
+                if (data == null || data.Count == 0)
+                {
+                    _logger.LogError("После десериализации данные отсутствуют");
+                    throw new InvalidOperationException("Не удалось получить данные после десериализации");
+                }
+
+                // Проверка данных
+                foreach (var kvp in data)
+                {
+                    if (kvp.Value == null)
+                    {
+                        _logger.LogWarning($"Пустое значение для ключа {kvp.Key}");
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(kvp.Value.NewName))
+                    {
+                        _logger.LogWarning($"Отсутствует название для организации с кодом {kvp.Key}");
+                    }
+
+                    if (kvp.Value.WorkloadCoefficient <= 0)
+                    {
+                        _logger.LogWarning($"Нулевой или отрицательный коэффициент для организации {kvp.Value.NewName} (код {kvp.Key}): {kvp.Value.WorkloadCoefficient}");
+                    }
+                }
+
+                return data;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Ошибка при десериализации данных");
+                throw new InvalidOperationException("Не удалось преобразовать данные из JSON", ex);
+            }
         }
         
         private async Task<double> LoadParameterAsync(string fileName)
@@ -88,139 +133,236 @@ namespace KG_DLI6_NET_CORE.Services
         {
             _logger.LogInformation("Создание графика рабочей нагрузки без ограничений");
             
-            // Сортировка данных по региону и названию
+            if (workloadData == null || !workloadData.Any())
+            {
+                _logger.LogError("Данные о рабочей нагрузке пусты или отсутствуют");
+                throw new InvalidOperationException("Нет данных для построения графика");
+            }
+
+            _logger.LogInformation($"Количество записей для графика: {workloadData.Count}");
+            
             var sortedData = workloadData.Values
                 .OrderBy(w => w.Region)
                 .ThenBy(w => w.NewName)
                 .ToArray();
-            
-            // Создание графика
-            var plt = new ScottPlot.Plot(1200, 1800);
-            
-            // Получение уникальных регионов для легенды
-            var uniqueRegions = sortedData.Select(w => w.Region).Distinct().ToArray();
-            
-            // Поскольку нельзя задать разные цвета для столбцов, создадим отдельные графики для каждого региона
-            var groupedData = sortedData.GroupBy(w => w.Region);
-            
-            foreach (var group in groupedData)
+
+            _logger.LogInformation($"Отсортированные данные: {sortedData.Length} записей");
+            _logger.LogInformation($"Пример первой записи: Region={sortedData[0].Region}, Name={sortedData[0].NewName}, Coefficient={sortedData[0].WorkloadCoefficient}");
+
+            var model = new PlotModel
             {
-                var color = GetColorForRegion(group.Key);
-                var regionItems = group.ToArray();
-                
-                for (int i = 0; i < regionItems.Length; i++)
-                {
-                    // Найдем индекс элемента в общем массиве
-                    int index = Array.IndexOf(sortedData, regionItems[i]);
-                    if (index >= 0)
-                    {
-                        double[] barPositions = new double[] { index };
-                        double[] barValues = new double[] { regionItems[i].WorkloadCoefficient };
-                        var bar = plt.AddBar(barValues, barPositions);
-                        bar.Color = color;
-                    }
-                }
-                
-                // Добавляем элемент в легенду
-                plt.Legend(true);
-            }
-            
-            // Подготовка данных для горизонтальной столбчатой диаграммы
-            double[] positions = Enumerable.Range(0, sortedData.Length).Select(i => (double)i).ToArray();
-            
+                Title = "Коэффициенты рабочей нагрузки",
+                TitleFontSize = 16,
+                TitleFontWeight = FontWeights.Bold,
+                PlotAreaBorderThickness = new OxyThickness(1),
+                PlotAreaBorderColor = OxyColors.Black,
+                Background = OxyColors.White,
+                TextColor = OxyColors.Black
+            };
+
             // Настройка осей
-            plt.XAxis.ManualTickPositions(positions, sortedData.Select(w => w.NewName).ToArray());
-            plt.XAxis.TickLabelStyle(rotation: 45, fontSize: 8);
-            plt.XAxis.Label("Медицинские организации");
-            
-            plt.YAxis.Label("Коэффициент нагрузки");
-            plt.SetAxisLimits(yMin: 0.75, yMax: 1.25);
-            
-            // Добавление горизонтальной линии на значении 1
-            plt.AddHorizontalLine(1, System.Drawing.Color.Black, 1, LineStyle.Solid);
-            
-            // Добавление заголовка
-            plt.Title("Коэффициент загруженности по ОЗ (2022)");
-            
+            var xAxis = new LinearAxis
+            {
+                Position = AxisPosition.Bottom,
+                Title = "Значение коэффициента",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                Minimum = 0,
+                Maximum = 2,
+                MajorStep = 0.2,
+                MinorStep = 0.1,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            var yAxis = new CategoryAxis
+            {
+                Position = AxisPosition.Left,
+                Title = "Медицинские организации",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            model.Axes.Add(xAxis);
+            model.Axes.Add(yAxis);
+
+            // Создание серии
+            var series = new BarSeries
+            {
+                Title = "Коэффициенты",
+                FillColor = OxyColors.SteelBlue,
+                StrokeColor = OxyColors.Black,
+                StrokeThickness = 1,
+                BarWidth = 0.8,
+                BaseValue = 0
+            };
+
+            // Добавление данных
+            for (int i = 0; i < sortedData.Length; i++)
+            {
+                var item = sortedData[i];
+                if (item.WorkloadCoefficient <= 0)
+                {
+                    _logger.LogWarning($"Нулевой или отрицательный коэффициент для {item.NewName}: {item.WorkloadCoefficient}");
+                }
+                series.Items.Add(new BarItem { Value = item.WorkloadCoefficient, CategoryIndex = i });
+                yAxis.Labels.Add(item.NewName);
+            }
+
+            model.Series.Add(series);
+
+            // Настройка отображения
+            model.PlotMargins = new OxyThickness(120, 40, 40, 40); // Увеличиваем левое поле для названий
+            yAxis.MinimumRange = sortedData.Length;
+            yAxis.MaximumRange = sortedData.Length;
+            yAxis.GapWidth = 0.1;
+            yAxis.IsZoomEnabled = false;
+            yAxis.IsPanEnabled = false;
+
             // Сохранение графика
             var outputPath = Path.Combine(_outputPath, "Fig3-WorkloadCoefficient.png");
-            plt.SaveFig(outputPath);
-            
-            _logger.LogInformation($"График сохранен в: {outputPath}");
+            using (var stream = File.Create(outputPath))
+            {
+                var pngExporter = new OxyPlot.ImageSharp.PngExporter(1200, 1800);
+                pngExporter.Export(model, stream);
+            }
+
+            _logger.LogInformation($"График коэффициентов рабочей нагрузки сохранен в: {outputPath}");
         }
         
         private async Task CreateWorkloadWithLimitsGraphAsync(Dictionary<int, WorkloadData> workloadData, double upMax, double downMax)
         {
             _logger.LogInformation("Создание графика рабочей нагрузки с ограничениями");
             
-            // Сортировка данных по региону и названию
+            if (workloadData == null || !workloadData.Any())
+            {
+                _logger.LogError("Данные о рабочей нагрузке пусты или отсутствуют");
+                throw new InvalidOperationException("Нет данных для построения графика");
+            }
+
+            _logger.LogInformation($"Количество записей для графика: {workloadData.Count}");
+            _logger.LogInformation($"Параметры ограничений: upMax={upMax}, downMax={downMax}");
+            
             var sortedData = workloadData.Values
                 .OrderBy(w => w.Region)
                 .ThenBy(w => w.NewName)
                 .ToArray();
-            
-            // Создание графика
-            var plt = new ScottPlot.Plot(1200, 1800);
-            
-            // Получение уникальных регионов для легенды
-            var uniqueRegions = sortedData.Select(w => w.Region).Distinct().ToArray();
-            
-            // Поскольку нельзя задать разные цвета для столбцов, создадим отдельные графики для каждого региона
-            var groupedData = sortedData.GroupBy(w => w.Region);
-            
-            foreach (var group in groupedData)
+
+            _logger.LogInformation($"Отсортированные данные: {sortedData.Length} записей");
+            _logger.LogInformation($"Пример первой записи: Region={sortedData[0].Region}, Name={sortedData[0].NewName}, Coefficient={sortedData[0].AdjustedWorkloadCoefficient}");
+
+            var model = new PlotModel
             {
-                var color = GetColorForRegion(group.Key);
-                var regionItems = group.ToArray();
-                
-                for (int i = 0; i < regionItems.Length; i++)
-                {
-                    // Найдем индекс элемента в общем массиве
-                    int index = Array.IndexOf(sortedData, regionItems[i]);
-                    if (index >= 0)
-                    {
-                        double[] barPositions = new double[] { index };
-                        double[] barValues = new double[] { regionItems[i].AdjustedWorkloadCoefficient };
-                        var bar = plt.AddBar(barValues, barPositions);
-                        bar.Color = color;
-                    }
-                }
-                
-                // Добавляем элемент в легенду
-                plt.Legend(true);
-            }
-            
-            // Подготовка данных для подписей оси X
-            double[] positions = Enumerable.Range(0, sortedData.Length).Select(i => (double)i).ToArray();
-            
+                Title = "Скорректированные коэффициенты рабочей нагрузки",
+                TitleFontSize = 16,
+                TitleFontWeight = FontWeights.Bold,
+                PlotAreaBorderThickness = new OxyThickness(1),
+                PlotAreaBorderColor = OxyColors.Black,
+                Background = OxyColors.White,
+                TextColor = OxyColors.Black
+            };
+
             // Настройка осей
-            plt.XAxis.ManualTickPositions(positions, sortedData.Select(w => w.NewName).ToArray());
-            plt.XAxis.TickLabelStyle(rotation: 45, fontSize: 8);
-            plt.XAxis.Label("Медицинские организации");
-            
-            plt.YAxis.Label("Коэффициент нагрузки (с ограничениями)");
-            plt.SetAxisLimits(yMin: 0.75, yMax: 1.25);
-            
-            // Добавление горизонтальных линий
-            plt.AddHorizontalLine(1, System.Drawing.Color.Black, 1, LineStyle.Solid);
-            plt.AddHorizontalLine(upMax, System.Drawing.Color.Green, 1, LineStyle.Solid);
-            plt.AddHorizontalLine(downMax, System.Drawing.Color.Red, 1, LineStyle.Solid);
-            
-            // Добавление заголовка
-            plt.Title("Коэффициент загруженности по ОЗ, с ограничениями (2022)");
-            
+            var xAxis = new LinearAxis
+            {
+                Position = AxisPosition.Bottom,
+                Title = "Значение коэффициента",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                Minimum = 0,
+                Maximum = 2,
+                MajorStep = 0.2,
+                MinorStep = 0.1,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            var yAxis = new CategoryAxis
+            {
+                Position = AxisPosition.Left,
+                Title = "Медицинские организации",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            model.Axes.Add(xAxis);
+            model.Axes.Add(yAxis);
+
+            // Создание серии
+            var series = new BarSeries
+            {
+                Title = "Коэффициенты",
+                FillColor = OxyColors.SteelBlue,
+                StrokeColor = OxyColors.Black,
+                StrokeThickness = 1,
+                BarWidth = 0.8,
+                BaseValue = 0
+            };
+
+            // Добавление данных
+            for (int i = 0; i < sortedData.Length; i++)
+            {
+                var item = sortedData[i];
+                if (item.AdjustedWorkloadCoefficient <= 0)
+                {
+                    _logger.LogWarning($"Нулевой или отрицательный скорректированный коэффициент для {item.NewName}: {item.AdjustedWorkloadCoefficient}");
+                }
+                series.Items.Add(new BarItem { Value = item.AdjustedWorkloadCoefficient, CategoryIndex = i });
+                yAxis.Labels.Add(item.NewName);
+            }
+
+            model.Series.Add(series);
+
+            // Настройка отображения
+            model.PlotMargins = new OxyThickness(120, 40, 40, 40); // Увеличиваем левое поле для названий
+            yAxis.MinimumRange = sortedData.Length;
+            yAxis.MaximumRange = sortedData.Length;
+            yAxis.GapWidth = 0.1;
+            yAxis.IsZoomEnabled = false;
+            yAxis.IsPanEnabled = false;
+
             // Сохранение графика
             var outputPath = Path.Combine(_outputPath, "Fig4-AdjWorkloadCoefficient.png");
-            plt.SaveFig(outputPath);
-            
-            _logger.LogInformation($"График сохранен в: {outputPath}");
+            using (var stream = File.Create(outputPath))
+            {
+                var pngExporter = new OxyPlot.ImageSharp.PngExporter(1200, 1800);
+                pngExporter.Export(model, stream);
+            }
+
+            _logger.LogInformation($"График скорректированных коэффициентов рабочей нагрузки сохранен в: {outputPath}");
         }
         
-        private System.Drawing.Color GetColorForRegion(string region)
+        private OxyColor GetColorForRegion(string region)
         {
-            return _regionColors.ContainsKey(region) 
-                ? _regionColors[region] 
-                : System.Drawing.Color.Gray; // Цвет по умолчанию
+            return _regionColors.TryGetValue(region, out var color) ? color : OxyColors.Gray;
         }
     }
 }

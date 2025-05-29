@@ -73,6 +73,13 @@
 8) `/api/budget-simulation/simulate-budgets`
 9) `/api/budget-rebalancing/rebalance`
 
+1) `/api/healthcare-organization/process-organizations`
+2) `/api/healthcare-data-enrichment/enrich-data`
+3) `/api/distance-calculation/calculate-distances`
+4) `/api/geo-scenario/create-scenarios`
+5) `/api/census-data/process-census-data`
+6) `/api/health-facility-data/process-health-facility-data`
+
 ## Запуск проекта
 
 ### Необходимые предварительные условия

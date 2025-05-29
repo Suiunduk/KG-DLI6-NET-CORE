@@ -1,6 +1,9 @@
 using System.Text.Json;
 using KG_DLI6_NET_CORE.Models;
-using ScottPlot;
+using OxyPlot;
+using OxyPlot.Axes;
+using OxyPlot.Series;
+using OxyPlot.Annotations;
 
 namespace KG_DLI6_NET_CORE.Services
 {
@@ -15,18 +18,18 @@ namespace KG_DLI6_NET_CORE.Services
         private readonly double _source2 = 3308552674; // Бюджет для семейной медицины
         private readonly double _insuredUninsuredRatio = 3.02; // Коэффициент соотношения застрахованных и незастрахованных
         
-        // Словарь цветов для областей, аналогичный Python-коду
-        private readonly Dictionary<string, System.Drawing.Color> _regionColors = new()
+        // Словарь цветов для областей
+        private readonly Dictionary<string, OxyColor> _regionColors = new()
         {
-            { "Баткенская обл.", System.Drawing.Color.Red },
-            { "Бишкек г.", System.Drawing.Color.Blue },
-            { "Чуйская обл.", System.Drawing.Color.Green },
-            { "Иссык-Кульская обл.", System.Drawing.Color.Black },
-            { "Джалал-Абадская обл.", System.Drawing.Color.Magenta },
-            { "Нарынская обл.", System.Drawing.Color.Green },
-            { "Ошская обл.", System.Drawing.Color.Yellow },
-            { "Таласская обл.", System.Drawing.Color.Cyan },
-            { "Ош г.", System.Drawing.Color.Black }
+            { "Баткенская обл.", OxyColors.Red },
+            { "Бишкек г.", OxyColors.Blue },
+            { "Чуйская обл.", OxyColors.Green },
+            { "Иссык-Кульская обл.", OxyColors.Black },
+            { "Джалал-Абадская обл.", OxyColors.Magenta },
+            { "Нарынская обл.", OxyColors.Green },
+            { "Ошская обл.", OxyColors.Yellow },
+            { "Таласская обл.", OxyColors.Cyan },
+            { "Ош г.", OxyColors.Black }
         };
 
         public BudgetReplicationService(ILogger<BudgetReplicationService> logger)
@@ -282,143 +285,244 @@ namespace KG_DLI6_NET_CORE.Services
         
         private async Task CreateBudgetReplicationGraphsAsync(Dictionary<int, BudgetReplicationData> budgetData)
         {
-            _logger.LogInformation("Создание графиков точности репликации бюджета");
+            _logger.LogInformation("Создание графиков для воспроизведения бюджетов");
             
-            // Сортировка данных
+            // Сортировка данных по отклонению
             var sortedData = budgetData.Values
-                .OrderBy(x => x.Region)
-                .ThenBy(x => x.NewName)
+                .OrderBy(d => d.budget_repl)
                 .ToArray();
             
-            // 1. Создание графика точности репликации бюджета
+            // Создание графика точности
             await CreateBudgetReplicationAccuracyGraphAsync(sortedData);
             
-            // 2. Создание гистограммы коэффициента репликации
+            // Создание гистограммы отклонений
             await CreateBudgetReplicationHistogramAsync(sortedData);
-            
-            _logger.LogInformation("Графики точности репликации бюджета созданы");
         }
         
         private async Task CreateBudgetReplicationAccuracyGraphAsync(BudgetReplicationData[] sortedData)
         {
-            var plt = new ScottPlot.Plot(1200, 1800);
+            _logger.LogInformation("Создание графика точности воспроизведения бюджетов");
             
-            // Получение уникальных регионов для легенды
-            var uniqueRegions = sortedData.Select(w => w.Region).Distinct().ToArray();
+            var model = new PlotModel 
+            { 
+                Title = "Точность воспроизведения бюджетов",
+                TitleFontSize = 16,
+                TitleFontWeight = FontWeights.Bold,
+                PlotAreaBorderThickness = new OxyThickness(1),
+                PlotAreaBorderColor = OxyColors.Black,
+                Background = OxyColors.White,
+                TextColor = OxyColors.Black
+            };
             
-            // Группируем данные по региону
-            var groupedData = sortedData.GroupBy(w => w.Region);
+            // Настройка осей
+            var xAxis = new LinearAxis
+            {
+                Position = AxisPosition.Bottom,
+                Title = "Значение коэффициента",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                Minimum = -20,
+                Maximum = 20,
+                MajorStep = 5,
+                MinorStep = 1,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black,
+                ExtraGridlines = new double[] { 0 },
+                ExtraGridlineStyle = LineStyle.Solid,
+                ExtraGridlineColor = OxyColors.Black,
+                ExtraGridlineThickness = 1
+            };
+
+            var yAxis = new CategoryAxis
+            {
+                Position = AxisPosition.Left,
+                Title = "Медицинские организации",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black,
+                GapWidth = 0.1
+            };
+
+            model.Axes.Add(xAxis);
+            model.Axes.Add(yAxis);
             
-            // Для каждого региона создаем отдельные столбцы
+            // Группировка данных по регионам
+            var groupedData = sortedData.GroupBy(d => d.Region);
+            
+            // Добавление данных
+            int categoryIndex = 0;
             foreach (var group in groupedData)
             {
                 var color = GetColorForRegion(group.Key);
-                var regionItems = group.ToArray();
-                
-                for (int i = 0; i < regionItems.Length; i++)
+                var series = new BarSeries
                 {
-                    // Найдем индекс элемента в общем массиве
-                    int index = Array.IndexOf(sortedData, regionItems[i]);
-                    if (index >= 0)
-                    {
-                        double[] barPositions = new double[] { index };
-                        double[] barValues = new double[] { regionItems[i].budget_repl };
-                        var bar = plt.AddBar(barValues, barPositions);
-                        bar.Color = color;
-                    }
+                    Title = group.Key,
+                    FillColor = color,
+                    StrokeColor = OxyColors.Black,
+                    StrokeThickness = 1,
+                    BarWidth = 0.5,
+                    BaseValue = 0
+                };
+                
+                foreach (var item in group)
+                {
+                    series.Items.Add(new BarItem { Value = item.budget_repl * 100, CategoryIndex = categoryIndex });
+                    yAxis.Labels.Add(item.NewName);
+                    categoryIndex++;
                 }
                 
-                // Добавляем элемент в легенду
-                plt.Legend(true);
+                model.Series.Add(series);
             }
-            
-            // Настройка осей
-            double[] positions = Enumerable.Range(0, sortedData.Length).Select(i => (double)i).ToArray();
-            plt.XAxis.ManualTickPositions(positions, sortedData.Select(w => w.NewName).ToArray());
-            plt.XAxis.TickLabelStyle(rotation: 45, fontSize: 8);
-            plt.XAxis.Label("Медицинские организации");
-            
-            plt.YAxis.Label("% бюджета 2023 г.");
-            plt.SetAxisLimits(yMin: -0.2, yMax: 0.2);
-            
-            // Добавление горизонтальной линии на значении 0
-            plt.AddHorizontalLine(0, System.Drawing.Color.Black, 1, LineStyle.Solid);
-            
-            // Добавление заголовка
-            plt.Title("Точность репликации бюджета (2023 г.)");
+
+            // Настройка отображения
+            model.PlotMargins = new OxyThickness(120, 40, 40, 40); // Увеличиваем левое поле для названий
+            yAxis.MinimumRange = sortedData.Length;
+            yAxis.MaximumRange = sortedData.Length;
+            yAxis.IsZoomEnabled = false;
+            yAxis.IsPanEnabled = false;
             
             // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, "Fig5-budget replication quality.png");
-            plt.SaveFig(outputPath);
+            var outputPath = Path.Combine(_outputPath, "budget_replication_accuracy.png");
+            using (var stream = File.Create(outputPath))
+            {
+                var pngExporter = new OxyPlot.ImageSharp.PngExporter(1200, 1800);
+                pngExporter.Export(model, stream);
+            }
             
-            _logger.LogInformation($"График точности репликации бюджета сохранен в: {outputPath}");
+            _logger.LogInformation($"График точности сохранен в: {outputPath}");
         }
         
         private async Task CreateBudgetReplicationHistogramAsync(BudgetReplicationData[] sortedData)
         {
-            var plt = new ScottPlot.Plot(1000, 800);
+            _logger.LogInformation("Создание гистограммы отклонений бюджета");
             
-            // Получение значений отклонений
-            double[] values = sortedData.Select(d => d.budget_repl).ToArray();
-            
-            // Расчет параметров гистограммы
-            double min = values.Min();
-            double max = values.Max();
-            double binWidth = 0.01;
-            int binCount = (int)((max - min) / binWidth);
-            
-            // Создание гистограммы с использованием методов ScottPlot 4.x
-            double[] counts = new double[binCount];
-            double[] binEdges = new double[binCount + 1];
-            
-            // Формируем границы бинов
-            for (int i = 0; i <= binCount; i++)
+            var model = new PlotModel
             {
-                binEdges[i] = min + i * binWidth;
-            }
+                Title = "Histogram of the replication ratio (0 = perfect replication)\nГистограмма коэффициента репликации (0 = идеальная репликация)",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                PlotAreaBorderThickness = new OxyThickness(1),
+                PlotAreaBorderColor = OxyColors.Black,
+                Background = OxyColors.White,
+                TextColor = OxyColors.Black
+            };
+
+            // Настройка осей
+            var xAxis = new LinearAxis
+            {
+                Position = AxisPosition.Bottom,
+                Title = "Ratio",
+                TitleFontSize = 12,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                StringFormat = "F2",
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            var yAxis = new LinearAxis
+            {
+                Position = AxisPosition.Left,
+                Title = "Frequency",
+                TitleFontSize = 12,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                Minimum = 0,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            model.Axes.Add(xAxis);
+            model.Axes.Add(yAxis);
+
+            // Используем непосредственно budget_repl как в Python
+            var values = sortedData.Select(d => d.budget_repl).ToArray();
             
-            // Заполняем бины
+            // Вычисляем границы и количество бинов как в Python
+            var min = values.Min();
+            var max = values.Max();
+            const double binWidth = 0.01;
+            var numBins = (int)((max - min) / binWidth);
+
+            // Создаем биннинг
+            var bins = new int[numBins];
             foreach (var value in values)
             {
-                int binIndex = (int)((value - min) / binWidth);
-                if (binIndex >= 0 && binIndex < binCount)
+                var binIndex = (int)((value - min) / binWidth);
+                if (binIndex >= 0 && binIndex < numBins)
                 {
-                    counts[binIndex]++;
+                    bins[binIndex]++;
                 }
             }
-            
-            // Центры бинов для отображения на графике
-            double[] binCenters = new double[binCount];
-            for (int i = 0; i < binCount; i++)
+
+            // Создание гистограммы
+            var histogram = new RectangleBarSeries
             {
-                binCenters[i] = min + (i + 0.5) * binWidth;
+                FillColor = OxyColors.RoyalBlue,
+                StrokeColor = OxyColors.Black,
+                StrokeThickness = 1
+            };
+
+            // Добавление баров гистограммы
+            for (int i = 0; i < numBins; i++)
+            {
+                var x0 = min + i * binWidth;
+                var x1 = x0 + binWidth;
+                histogram.Items.Add(new RectangleBarItem(x0, 0, x1, bins[i]));
             }
+
+            model.Series.Add(histogram);
+
+            // Автоматическое определение пределов осей
+            xAxis.Minimum = min;
+            xAxis.Maximum = max;
+            xAxis.MajorStep = 0.1;
+            xAxis.MinorStep = 0.02;
             
-            // Отображаем как бары
-            var bar = plt.AddBar(counts, binCenters);
-            bar.BarWidth = binWidth * 0.8;
-            bar.FillColor = System.Drawing.Color.Blue;
-            bar.BorderColor = System.Drawing.Color.Black;
-            
-            // Настройка осей
-            plt.XAxis.Label("Коэффициент репликации");
-            plt.YAxis.Label("Частота");
-            
-            // Добавление заголовка
-            plt.Title("Гистограмма коэффициента репликации (0 = идеальная репликация)");
-            
+            yAxis.Maximum = bins.Max() + 1;
+            yAxis.MajorStep = 1;
+            yAxis.MinorStep = 0.5;
+
+            // Настройка отображения
+            model.PlotMargins = new OxyThickness(60, 40, 20, 40);
+
             // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, "Fig6-budget replication histogram.png");
-            plt.SaveFig(outputPath);
-            
-            _logger.LogInformation($"Гистограмма коэффициента репликации сохранена в: {outputPath}");
+            var outputPath = Path.Combine(_outputPath, "budget_replication_histogram.png");
+            using (var stream = File.Create(outputPath))
+            {
+                var pngExporter = new OxyPlot.ImageSharp.PngExporter(800, 600);
+                pngExporter.Export(model, stream);
+            }
+
+            _logger.LogInformation($"Гистограмма отклонений сохранена в: {outputPath}");
         }
         
-        private System.Drawing.Color GetColorForRegion(string region)
+        private OxyColor GetColorForRegion(string region)
         {
-            return _regionColors.ContainsKey(region) 
-                ? _regionColors[region] 
-                : System.Drawing.Color.Gray; // Цвет по умолчанию
+            return _regionColors.TryGetValue(region, out var color) ? color : OxyColors.Gray;
         }
     }
 }

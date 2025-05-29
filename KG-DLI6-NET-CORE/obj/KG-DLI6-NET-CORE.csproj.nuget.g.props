@@ -25,6 +25,7 @@
   <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
     <Import Project="$(NuGetPackageRoot)microsoft.extensions.apidescription.server/6.0.5/build/Microsoft.Extensions.ApiDescription.Server.props" Condition="Exists('$(NuGetPackageRoot)microsoft.extensions.apidescription.server/6.0.5/build/Microsoft.Extensions.ApiDescription.Server.props')" />
     <Import Project="$(NuGetPackageRoot)swashbuckle.aspnetcore/6.4.0/build/Swashbuckle.AspNetCore.props" Condition="Exists('$(NuGetPackageRoot)swashbuckle.aspnetcore/6.4.0/build/Swashbuckle.AspNetCore.props')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.extensions.configuration.usersecrets/7.0.0/buildTransitive/net6.0/Microsoft.Extensions.Configuration.UserSecrets.props" Condition="Exists('$(NuGetPackageRoot)microsoft.extensions.configuration.usersecrets/7.0.0/buildTransitive/net6.0/Microsoft.Extensions.Configuration.UserSecrets.props')" />
     <Import Project="$(NuGetPackageRoot)chartjs.blazor.fork/2.0.2/buildTransitive/ChartJs.Blazor.Fork.props" Condition="Exists('$(NuGetPackageRoot)chartjs.blazor.fork/2.0.2/buildTransitive/ChartJs.Blazor.Fork.props')" />
   </ImportGroup>
   <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">

@@ -1,7 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using KG_DLI6_NET_CORE.Models;
-using ScottPlot;
+using OxyPlot;
+using OxyPlot.Axes;
+using OxyPlot.Series;
+using OxyPlot.Annotations;
+using OxyPlot.ImageSharp;
+using OxyPlot.Legends;
 
 namespace KG_DLI6_NET_CORE.Services
 {
@@ -14,18 +19,18 @@ namespace KG_DLI6_NET_CORE.Services
         // Процент переназначения бюджета для ОУЗ без узких специалистов
         private readonly double _reassignPercentage = 0.25; // 25%
         
-        // Словарь цветов для областей, аналогичный Python-коду
-        private readonly Dictionary<string, System.Drawing.Color> _regionColors = new()
+        // Словарь цветов для областей
+        private readonly Dictionary<string, OxyColor> _regionColors = new()
         {
-            { "Баткенская область", System.Drawing.Color.Red },
-            { "Бишкекский горкенеш", System.Drawing.Color.Blue },
-            { "Чуйская область", System.Drawing.Color.Green },
-            { "Иссык-Кульская область", System.Drawing.Color.Black },
-            { "Джалал-Абадская область", System.Drawing.Color.Magenta },
-            { "Нарынская область", System.Drawing.Color.Green },
-            { "Ошская область", System.Drawing.Color.Yellow },
-            { "Таласская область", System.Drawing.Color.Cyan },
-            { "Ошский горкенеш", System.Drawing.Color.Black }
+            { "Баткенская обл.", OxyColors.Red },
+            { "Бишкек г.", OxyColors.Blue },
+            { "Чуйская обл.", OxyColors.Green },
+            { "Иссык-Кульская обл.", OxyColors.Black },
+            { "Джалал-Абадская обл.", OxyColors.Magenta },
+            { "Нарынская обл.", OxyColors.Green },
+            { "Ошская обл.", OxyColors.Yellow },
+            { "Таласская обл.", OxyColors.Cyan },
+            { "Ош г.", OxyColors.Black }
         };
 
         public BudgetSimulationService(ILogger<BudgetSimulationService> logger)
@@ -35,7 +40,6 @@ namespace KG_DLI6_NET_CORE.Services
             _workingPath = Path.Combine(Directory.GetCurrentDirectory(), "working");
             _outputPath = Path.Combine(Directory.GetCurrentDirectory(), "output");
             
-            // Создаем директории, если они не существуют
             Directory.CreateDirectory(_workingPath);
             Directory.CreateDirectory(_outputPath);
         }
@@ -170,43 +174,195 @@ namespace KG_DLI6_NET_CORE.Services
             
             // 3. Графическое представление влияния на бюджет
             await CreateBudgetImpactGraphAsync(data, geokName);
+            
+            // 4. Создание гистограммы распределения
+            await CreateHistogramAsync(data, geokName);
         }
         
         private async Task CreateScatterPlotAsync(Dictionary<int, SimulationData> data, string geokName)
         {
-            _logger.LogInformation($"Создание диаграммы рассеяния для {geokName}");
-            
-            var plt = new ScottPlot.Plot(1000, 800);
-            
-            // Получение значений для построения графика
-            double[] xValues = data.Values.Select(d => d.geok_old).ToArray();
-            double[] yValues = data.Values.Select(d => GetGeokValue(d, geokName)).ToArray();
-            
-            // Построение диаграммы рассеяния
-            plt.AddScatter(xValues, yValues);
-            
-            // Настройка осей
-            plt.XAxis.Label("geok_old");
-            plt.YAxis.Label(geokName);
-            
-            // Установка одинаковых границ для осей X и Y
-            double minValue = Math.Min(xValues.Min(), yValues.Min());
-            double maxValue = Math.Max(xValues.Max(), yValues.Max());
-            plt.SetAxisLimits(minValue, maxValue, minValue, maxValue);
-            
-            // Добавление диагональной линии
-            var line = plt.AddLine(minValue, minValue, maxValue, maxValue);
-            line.Color = System.Drawing.Color.Red;
-            line.LineStyle = LineStyle.Dash;
-            
-            // Добавление заголовка
-            plt.Title($"Scatter Plot: geok_old vs {geokName}");
-            
-            // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, $"Fig6.{geokName}-Geok_old vs {geokName}.png");
-            plt.SaveFig(outputPath);
-            
-            _logger.LogInformation($"Диаграмма рассеяния сохранена в: {outputPath}");
+            try
+            {
+                _logger.LogInformation($"Начало создания диаграммы рассеяния для {geokName}");
+                
+                if (data == null || !data.Any())
+                {
+                    _logger.LogError("Данные для построения графика отсутствуют");
+                    return;
+                }
+
+                _logger.LogInformation($"Количество записей для обработки: {data.Count}");
+                
+                var model = new PlotModel
+                {
+                    Title = $"Точечная диаграмма: geok_old против {geokName}\nScatter Plot: geok_old vs {geokName}",
+                    TitleFontSize = 14,
+                    TitleFontWeight = FontWeights.Bold,
+                    PlotAreaBorderThickness = new OxyThickness(1),
+                    PlotAreaBorderColor = OxyColors.Black,
+                    Background = OxyColors.White,
+                    TextColor = OxyColors.Black
+                };
+
+                _logger.LogInformation("Настройка осей графика");
+                
+                // Настройка осей
+                var xAxis = new LinearAxis
+                {
+                    Position = AxisPosition.Bottom,
+                    Title = "geok_old",
+                    TitleFontSize = 12,
+                    TitleFontWeight = FontWeights.Bold,
+                    MajorGridlineStyle = LineStyle.Solid,
+                    MajorGridlineColor = OxyColors.LightGray,
+                    MinorGridlineStyle = LineStyle.Dot,
+                    MinorGridlineColor = OxyColors.LightGray,
+                    MinimumPadding = 0.1,
+                    MaximumPadding = 0.1
+                };
+                
+                var yAxis = new LinearAxis
+                {
+                    Position = AxisPosition.Left,
+                    Title = geokName,
+                    TitleFontSize = 12,
+                    TitleFontWeight = FontWeights.Bold,
+                    MajorGridlineStyle = LineStyle.Solid,
+                    MajorGridlineColor = OxyColors.LightGray,
+                    MinorGridlineStyle = LineStyle.Dot,
+                    MinorGridlineColor = OxyColors.LightGray,
+                    MinimumPadding = 0.1,
+                    MaximumPadding = 0.1
+                };
+                
+                model.Axes.Add(xAxis);
+                model.Axes.Add(yAxis);
+
+                _logger.LogInformation("Группировка данных по регионам");
+                
+                // Группировка данных по регионам
+                var groupedData = data.Values
+                    .Where(d => !string.IsNullOrEmpty(d.Region))
+                    .GroupBy(d => d.Region)
+                    .ToList();
+
+                _logger.LogInformation($"Найдено {groupedData.Count} регионов для обработки");
+                
+                int totalPoints = 0;
+                // Добавление точек по регионам
+                foreach (var group in groupedData)
+                {
+                    _logger.LogInformation($"Обработка региона: {group.Key}");
+                    
+                    var color = GetColorForRegion(group.Key);
+                    var scatterSeries = new ScatterSeries
+                    {
+                        Title = group.Key,
+                        MarkerType = MarkerType.Circle,
+                        MarkerSize = 4,
+                        MarkerFill = color
+                    };
+                    
+                    foreach (var item in group)
+                    {
+                        var x = item.geok_old;
+                        var y = GetGeokValue(item, geokName);
+                        if (!double.IsNaN(x) && !double.IsNaN(y) && x != 0 && y != 0)
+                        {
+                            scatterSeries.Points.Add(new ScatterPoint(x, y));
+                            totalPoints++;
+                        }
+                    }
+                    
+                    if (scatterSeries.Points.Count > 0)
+                    {
+                        model.Series.Add(scatterSeries);
+                        _logger.LogInformation($"Добавлено {scatterSeries.Points.Count} точек для региона {group.Key}");
+                    }
+                }
+
+                _logger.LogInformation($"Всего добавлено {totalPoints} точек на график");
+                
+                if (totalPoints == 0)
+                {
+                    _logger.LogError("Нет данных для отображения на графике");
+                    return;
+                }
+
+                // Добавление диагональной линии
+                model.Annotations.Add(new LineAnnotation
+                {
+                    Type = LineAnnotationType.LinearEquation,
+                    Slope = 1,
+                    Intercept = 0,
+                    Color = OxyColors.Red,
+                    LineStyle = LineStyle.Dash,
+                    StrokeThickness = 1
+                });
+                
+                // Настройка легенды
+                var legend = new Legend
+                {
+                    LegendPlacement = LegendPlacement.Outside,
+                    LegendPosition = LegendPosition.RightTop,
+                    LegendOrientation = LegendOrientation.Vertical,
+                    LegendBorder = OxyColors.Black,
+                    LegendBackground = OxyColor.FromAColor(200, OxyColors.White)
+                };
+                model.Legends.Add(legend);
+                
+                // Настройка отображения
+                model.PlotMargins = new OxyThickness(60, 40, 120, 40);
+
+                _logger.LogInformation("Подготовка к сохранению графика");
+                
+                // Проверяем и создаем директорию, если она не существует
+                if (!Directory.Exists(_outputPath))
+                {
+                    _logger.LogInformation($"Создание директории: {_outputPath}");
+                    Directory.CreateDirectory(_outputPath);
+                }
+                
+                // Сохранение графика
+                var outputPath = Path.Combine(_outputPath, $"scatter_{geokName}.png");
+                
+                // Проверяем, не занят ли файл
+                if (File.Exists(outputPath))
+                {
+                    try
+                    {
+                        File.Delete(outputPath);
+                        _logger.LogInformation("Удален существующий файл графика");
+                    }
+                    catch (IOException ex)
+                    {
+                        _logger.LogError(ex, "Не удалось удалить существующий файл графика");
+                        outputPath = Path.Combine(_outputPath, $"scatter_{geokName}_{DateTime.Now:yyyyMMddHHmmss}.png");
+                        _logger.LogInformation($"Используется альтернативное имя файла: {outputPath}");
+                    }
+                }
+
+                try
+                {
+                    _logger.LogInformation("Начало экспорта графика");
+                    using (var stream = File.Create(outputPath))
+                    {
+                        var pngExporter = new OxyPlot.ImageSharp.PngExporter(800, 600);
+                        pngExporter.Export(model, stream);
+                    }
+                    _logger.LogInformation($"График успешно сохранен в: {outputPath}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Ошибка при сохранении графика");
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Ошибка при создании диаграммы рассеяния для {geokName}");
+                throw;
+            }
         }
         
         private async Task CalculateAdjustedRatesAndBudgetsAsync(Dictionary<int, SimulationData> data, string geokName)
@@ -315,67 +471,345 @@ namespace KG_DLI6_NET_CORE.Services
         
         private async Task CreateBudgetImpactGraphAsync(Dictionary<int, SimulationData> data, string geokName)
         {
-            _logger.LogInformation($"Создание графика влияния на бюджет для {geokName}");
-            
-            string impactField = $"impact_{geokName}";
-            
-            var plt = new ScottPlot.Plot(1200, 1800);
-            
-            // Сортировка данных по региону и названию
-            var sortedData = data.Values
-                .OrderBy(x => x.Region)
-                .ThenBy(x => x.NewName)
-                .ToArray();
-            
-            // Получение уникальных регионов для легенды
-            var uniqueRegions = sortedData.Select(w => w.Region).Distinct().ToArray();
-            
-            // Группируем данные по региону
-            var groupedData = sortedData.GroupBy(w => w.Region);
-            
-            // Для каждого региона создаем отдельные столбцы
-            foreach (var group in groupedData)
+            try
             {
-                var color = GetColorForRegion(group.Key);
-                var regionItems = group.ToArray();
+                _logger.LogInformation($"Начало создания графика влияния на бюджет для {geokName}");
                 
-                for (int i = 0; i < regionItems.Length; i++)
+                if (data == null || !data.Any())
                 {
-                    // Найдем индекс элемента в общем массиве
-                    int index = Array.IndexOf(sortedData, regionItems[i]);
-                    if (index >= 0)
+                    _logger.LogError("Данные для построения графика отсутствуют");
+                    return;
+                }
+
+                var model = new PlotModel
+                {
+                    Title = $"Влияние половозрастной корректировки и {geokName} на бюджет ОЗ\nImpact of sex-age adjustment and {geokName} on HCO budget",
+                    TitleFontSize = 14,
+                    TitleFontWeight = FontWeights.Bold,
+                    PlotAreaBorderThickness = new OxyThickness(1),
+                    PlotAreaBorderColor = OxyColors.Black,
+                    Background = OxyColors.White,
+                    TextColor = OxyColors.Black
+                };
+
+                // Настройка осей
+                var xAxis = new LinearAxis
+                {
+                    Position = AxisPosition.Bottom,
+                    Title = "% от первоначального бюджета / % of original budget",
+                    TitleFontSize = 12,
+                    TitleFontWeight = FontWeights.Bold,
+                    MajorGridlineStyle = LineStyle.Solid,
+                    MajorGridlineColor = OxyColors.LightGray,
+                    MinorGridlineStyle = LineStyle.Dot,
+                    MinorGridlineColor = OxyColors.LightGray,
+                    Minimum = -40,
+                    Maximum = 40,
+                    MajorStep = 10,
+                    MinorStep = 5
+                };
+
+                var yAxis = new CategoryAxis
+                {
+                    Position = AxisPosition.Left,
+                    TitleFontSize = 12,
+                    TitleFontWeight = FontWeights.Bold,
+                    MajorGridlineStyle = LineStyle.Solid,
+                    MajorGridlineColor = OxyColors.LightGray,
+                    MinorGridlineStyle = LineStyle.Dot,
+                    MinorGridlineColor = OxyColors.LightGray,
+                    GapWidth = 0.1,
+                    IsTickCentered = false,
+                    MinimumPadding = 0.1,
+                    MaximumPadding = 0.1
+                };
+
+                model.Axes.Add(xAxis);
+                model.Axes.Add(yAxis);
+
+                // Группировка и сортировка данных
+                var sortedData = data.Values
+                    .OrderBy(d => GetImpact(d, $"impact_{geokName}"))
+                    .ToList();
+
+                // Добавление данных
+                int categoryIndex = 0;
+                foreach (var item in sortedData)
+                {
+                    var color = GetColorForRegion(item.Region);
+                    var series = new BarSeries
                     {
-                        double[] barPositions = new double[] { index };
-                        double[] barValues = new double[] { GetImpact(regionItems[i], impactField) };
-                        var bar = plt.AddBar(barValues, barPositions);
-                        bar.Color = color;
+                        Title = item.Region,
+                        FillColor = color,
+                        StrokeColor = OxyColors.Black,
+                        StrokeThickness = 1,
+                        BarWidth = 0.8
+                    };
+                    
+                    var impact = GetImpact(item, $"impact_{geokName}");
+                    if (!double.IsNaN(impact))
+                    {
+                        series.Items.Add(new BarItem { Value = impact, CategoryIndex = categoryIndex });
+                        yAxis.Labels.Add(item.NewName);
+                        categoryIndex++;
+                    }
+                    
+                    if (series.Items.Count > 0 && !model.Series.Any(s => s.Title == item.Region))
+                    {
+                        model.Series.Add(series);
                     }
                 }
+
+                // Добавление вертикальной линии на нуле
+                model.Annotations.Add(new LineAnnotation
+                {
+                    Type = LineAnnotationType.Vertical,
+                    X = 0,
+                    Color = OxyColors.Black,
+                    LineStyle = LineStyle.Solid,
+                    StrokeThickness = 1
+                });
+
+                // Настройка легенды
+                var legend = new Legend
+                {
+                    LegendPlacement = LegendPlacement.Outside,
+                    LegendPosition = LegendPosition.RightTop,
+                    LegendOrientation = LegendOrientation.Vertical,
+                    LegendBorder = OxyColors.Black,
+                    LegendBackground = OxyColor.FromAColor(200, OxyColors.White),
+                    LegendTitle = "Области и города / Regions"
+                };
+                model.Legends.Add(legend);
+
+                // Настройка отображения
+                model.PlotMargins = new OxyThickness(120, 40, 120, 40);
+                yAxis.IsZoomEnabled = false;
+                yAxis.IsPanEnabled = false;
+
+                _logger.LogInformation("Подготовка к сохранению графика");
                 
-                // Добавляем элемент в легенду
-                plt.Legend(true);
+                // Проверяем и создаем директорию, если она не существует
+                if (!Directory.Exists(_outputPath))
+                {
+                    _logger.LogInformation($"Создание директории: {_outputPath}");
+                    Directory.CreateDirectory(_outputPath);
+                }
+                
+                // Сохранение графика
+                var outputPath = Path.Combine(_outputPath, $"budget_impact_{geokName}.png");
+                
+                // Проверяем, не занят ли файл
+                if (File.Exists(outputPath))
+                {
+                    try
+                    {
+                        File.Delete(outputPath);
+                        _logger.LogInformation("Удален существующий файл графика");
+                    }
+                    catch (IOException ex)
+                    {
+                        _logger.LogError(ex, "Не удалось удалить существующий файл графика");
+                        outputPath = Path.Combine(_outputPath, $"budget_impact_{geokName}_{DateTime.Now:yyyyMMddHHmmss}.png");
+                        _logger.LogInformation($"Используется альтернативное имя файла: {outputPath}");
+                    }
+                }
+
+                try
+                {
+                    _logger.LogInformation("Начало экспорта графика");
+                    using (var stream = File.Create(outputPath))
+                    {
+                        var pngExporter = new OxyPlot.ImageSharp.PngExporter(800, 1200);
+                        pngExporter.Export(model, stream);
+                    }
+                    _logger.LogInformation($"График успешно сохранен в: {outputPath}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Ошибка при сохранении графика");
+                    throw;
+                }
             }
-            
-            // Настройка осей
-            double[] positions = Enumerable.Range(0, sortedData.Length).Select(i => (double)i).ToArray();
-            plt.XAxis.ManualTickPositions(positions, sortedData.Select(w => w.NewName).ToArray());
-            plt.XAxis.TickLabelStyle(rotation: 45, fontSize: 8);
-            plt.XAxis.Label("Медицинские организации");
-            
-            plt.YAxis.Label("% от первоначального бюджета");
-            plt.SetAxisLimits(yMin: -40, yMax: 40);
-            
-            // Добавление вертикальной линии на значении 0
-            plt.AddVerticalLine(0, System.Drawing.Color.Black, 1, LineStyle.Solid);
-            
-            // Добавление заголовка
-            plt.Title($"Влияние половозрастнои корректировки и {geokName} на бюджет оз");
-            
-            // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, $"Fig7.budget impact of sex-age adjustment with {geokName}.png");
-            plt.SaveFig(outputPath);
-            
-            _logger.LogInformation($"График влияния на бюджет сохранен в: {outputPath}");
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Ошибка при создании графика влияния на бюджет для {geokName}");
+                throw;
+            }
+        }
+        
+        private async Task CreateHistogramAsync(Dictionary<int, SimulationData> data, string geokName)
+        {
+            try
+            {
+                _logger.LogInformation($"Начало создания гистограммы для {geokName}");
+                
+                if (data == null || !data.Any())
+                {
+                    _logger.LogError("Данные для построения гистограммы отсутствуют");
+                    return;
+                }
+
+                var model = new PlotModel
+                {
+                    Title = $"Распределение влияния на бюджет ({geokName})\nDistribution of budget impact ({geokName})",
+                    TitleFontSize = 14,
+                    TitleFontWeight = FontWeights.Bold,
+                    PlotAreaBorderThickness = new OxyThickness(1),
+                    PlotAreaBorderColor = OxyColors.Black,
+                    Background = OxyColors.White,
+                    TextColor = OxyColors.Black
+                };
+
+                // Настройка осей
+                var xAxis = new LinearAxis
+                {
+                    Position = AxisPosition.Bottom,
+                    Title = "% бюджета 2023 г. / % of 2023 budget",
+                    TitleFontSize = 12,
+                    TitleFontWeight = FontWeights.Bold,
+                    MajorGridlineStyle = LineStyle.Solid,
+                    MajorGridlineColor = OxyColors.LightGray,
+                    MinorGridlineStyle = LineStyle.Dot,
+                    MinorGridlineColor = OxyColors.LightGray,
+                    MinimumPadding = 0.1,
+                    MaximumPadding = 0.1
+                };
+
+                var yAxis = new LinearAxis
+                {
+                    Position = AxisPosition.Left,
+                    Title = "Количество МО / Number of HCOs",
+                    TitleFontSize = 12,
+                    TitleFontWeight = FontWeights.Bold,
+                    MajorGridlineStyle = LineStyle.Solid,
+                    MajorGridlineColor = OxyColors.LightGray,
+                    MinorGridlineStyle = LineStyle.Dot,
+                    MinorGridlineColor = OxyColors.LightGray,
+                    Minimum = 0,
+                    MinimumPadding = 0.1,
+                    MaximumPadding = 0.1
+                };
+
+                model.Axes.Add(xAxis);
+                model.Axes.Add(yAxis);
+
+                // Получаем значения влияния
+                var values = data.Values
+                    .Select(d => GetImpact(d, $"impact_{geokName}"))
+                    .Where(v => !double.IsNaN(v))
+                    .ToArray();
+                
+                if (values.Length > 0)
+                {
+                    // Вычисляем границы и количество бинов
+                    var min = values.Min();
+                    var max = values.Max();
+                    const double binWidth = 2.0; // 2% интервалы
+                    var numBins = (int)((max - min) / binWidth) + 1;
+
+                    // Создаем биннинг
+                    var bins = new int[numBins];
+                    foreach (var value in values)
+                    {
+                        var binIndex = (int)((value - min) / binWidth);
+                        if (binIndex >= 0 && binIndex < numBins)
+                        {
+                            bins[binIndex]++;
+                        }
+                    }
+
+                    // Создание гистограммы
+                    var histogram = new RectangleBarSeries
+                    {
+                        FillColor = OxyColors.RoyalBlue,
+                        StrokeColor = OxyColors.Black,
+                        StrokeThickness = 1
+                    };
+
+                    // Добавление баров гистограммы
+                    for (int i = 0; i < numBins; i++)
+                    {
+                        var x0 = min + i * binWidth;
+                        var x1 = x0 + binWidth;
+                        histogram.Items.Add(new RectangleBarItem(x0, 0, x1, bins[i]));
+                    }
+
+                    model.Series.Add(histogram);
+
+                    // Добавление вертикальной линии на нуле
+                    model.Annotations.Add(new LineAnnotation
+                    {
+                        Type = LineAnnotationType.Vertical,
+                        X = 0,
+                        Color = OxyColors.Black,
+                        LineStyle = LineStyle.Dash,
+                        StrokeThickness = 1
+                    });
+
+                    // Автоматическое определение пределов осей
+                    xAxis.Minimum = min - binWidth;
+                    xAxis.Maximum = max + binWidth;
+                    xAxis.MajorStep = 5;
+                    xAxis.MinorStep = 1;
+                    
+                    yAxis.Maximum = bins.Max() + 1;
+                    yAxis.MajorStep = 1;
+                    yAxis.MinorStep = 0.5;
+                }
+
+                // Настройка отображения
+                model.PlotMargins = new OxyThickness(60, 40, 20, 40);
+
+                _logger.LogInformation("Подготовка к сохранению гистограммы");
+                
+                // Проверяем и создаем директорию, если она не существует
+                if (!Directory.Exists(_outputPath))
+                {
+                    _logger.LogInformation($"Создание директории: {_outputPath}");
+                    Directory.CreateDirectory(_outputPath);
+                }
+                
+                // Сохранение графика
+                var outputPath = Path.Combine(_outputPath, $"histogram_{geokName}.png");
+                
+                // Проверяем, не занят ли файл
+                if (File.Exists(outputPath))
+                {
+                    try
+                    {
+                        File.Delete(outputPath);
+                        _logger.LogInformation("Удален существующий файл гистограммы");
+                    }
+                    catch (IOException ex)
+                    {
+                        _logger.LogError(ex, "Не удалось удалить существующий файл гистограммы");
+                        outputPath = Path.Combine(_outputPath, $"histogram_{geokName}_{DateTime.Now:yyyyMMddHHmmss}.png");
+                        _logger.LogInformation($"Используется альтернативное имя файла: {outputPath}");
+                    }
+                }
+
+                try
+                {
+                    _logger.LogInformation("Начало экспорта гистограммы");
+                    using (var stream = File.Create(outputPath))
+                    {
+                        var pngExporter = new OxyPlot.ImageSharp.PngExporter(800, 600);
+                        pngExporter.Export(model, stream);
+                    }
+                    _logger.LogInformation($"Гистограмма успешно сохранена в: {outputPath}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Ошибка при сохранении гистограммы");
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Ошибка при создании гистограммы для {geokName}");
+                throw;
+            }
         }
         
         private async Task SaveDataAsync<T>(T data, string fileName)
@@ -437,11 +871,9 @@ namespace KG_DLI6_NET_CORE.Services
             return data.GetImpact(fieldName);
         }
         
-        private System.Drawing.Color GetColorForRegion(string region)
+        private OxyColor GetColorForRegion(string region)
         {
-            return _regionColors.ContainsKey(region) 
-                ? _regionColors[region] 
-                : System.Drawing.Color.Gray; // Цвет по умолчанию
+            return _regionColors.TryGetValue(region, out var color) ? color : OxyColors.Gray;
         }
     }
     

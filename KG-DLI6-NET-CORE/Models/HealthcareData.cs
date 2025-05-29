@@ -298,4 +298,100 @@ namespace KG_DLI6_NET_CORE.Models
             return _dynamicFields.TryGetValue(fieldName, out var value) ? value : 0;
         }
     }
+    
+    public class HealthcareOrganization
+    {
+        public string Oblast { get; set; }
+        public string NpSoate { get; set; }
+        public string Np { get; set; }
+        public int NpPopulation { get; set; }
+        public string NpCoordinates { get; set; }
+        public string CsmCode { get; set; }
+        public string Csm { get; set; }
+        public string CsmAddress { get; set; }
+        public string CsmCoordinates { get; set; }
+        public string CsmLocation { get; set; }
+        public string GsvCode { get; set; }
+        public string Gsv { get; set; }
+        public string GsvAddress { get; set; }
+        public string GsvCoordinates { get; set; }
+        public string GsvLocation { get; set; }
+        public string FapCode { get; set; }
+        public string Fap { get; set; }
+        public string FapAddress { get; set; }
+        public string FapCoordinates { get; set; }
+        public string FapLocation { get; set; }
+        public int RowNumber { get; set; }
+        public int NFap { get; set; }
+        public int NGsv { get; set; }
+        public List<string> FapCodes { get; set; }
+        public List<string> FapNames { get; set; }
+        public List<string> FapCoordinatesList { get; set; }
+        public List<string> GsvCodes { get; set; }
+        public List<string> GsvNames { get; set; }
+        public List<string> GsvCoordinatesList { get; set; }
+        
+        public double? DistanceToCsm { get; set; }
+        public double? DistanceToGsv { get; set; }
+        public double? DistanceToFap { get; set; }
+    }
+    
+    public class CensusData
+    {
+        public string SoateNp { get; set; }
+        public string Name { get; set; }
+        public int Population { get; set; }
+        public string Type { get; set; }
+        public string SoateOblast { get; set; }
+        public string SoateRayon { get; set; }
+        public string SoateAimak { get; set; }
+        public string Oblast { get; set; }
+        public string Rayon { get; set; }
+        public string Aimak { get; set; }
+        public string CorrectedName { get; set; }
+        public double Correction { get; set; }
+        public int CorrectedPopulation { get; set; }
+    }
+    
+    public class HealthFacilityData
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Type { get; set; }
+        public string Address { get; set; }
+        public string Region { get; set; }
+        public string District { get; set; }
+        public string Village { get; set; }
+        public string Coordinates { get; set; }
+        public string Phone { get; set; }
+        public string Email { get; set; }
+        public string Website { get; set; }
+        public string Status { get; set; }
+        public string Ownership { get; set; }
+        public string Services { get; set; }
+        public string Staff { get; set; }
+        public string Equipment { get; set; }
+        public string Notes { get; set; }
+    }
+    
+    public class PopulationData
+    {
+        public string AgeGroup { get; set; }
+        public int MaleCount { get; set; }
+        public int FemaleCount { get; set; }
+    }
+    
+    public class VisitData
+    {
+        public string AgeGroup { get; set; }
+        public int MaleVisits { get; set; }
+        public int FemaleVisits { get; set; }
+    }
+    
+    public class AgeSexCoefficient
+    {
+        public string Age { get; set; }
+        public string Sex { get; set; }
+        public double Coefficient { get; set; }
+    }
 }

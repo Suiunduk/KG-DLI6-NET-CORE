@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "/Users/master/RiderProjects/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE.csproj": {}
+    "/Users/master/Documents/Work/FREELANCE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE.csproj": {}
   },
   "projects": {
-    "/Users/master/RiderProjects/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE.csproj": {
+    "/Users/master/Documents/Work/FREELANCE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/Users/master/RiderProjects/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE.csproj",
+        "projectUniqueName": "/Users/master/Documents/Work/FREELANCE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE.csproj",
         "projectName": "KG-DLI6-NET-CORE",
-        "projectPath": "/Users/master/RiderProjects/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE.csproj",
+        "projectPath": "/Users/master/Documents/Work/FREELANCE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE.csproj",
         "packagesPath": "/Users/master/.nuget/packages/",
-        "outputPath": "/Users/master/RiderProjects/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/obj/",
+        "outputPath": "/Users/master/Documents/Work/FREELANCE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/obj/",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "/Users/master/.nuget/NuGet/NuGet.Config"
@@ -52,7 +52,7 @@
             },
             "EPPlus": {
               "target": "Package",
-              "version": "[7.7.0, )"
+              "version": "[7.0.4, )"
             },
             "MathNet.Numerics": {
               "target": "Package",
@@ -62,13 +62,41 @@
               "target": "Package",
               "version": "[7.0.5, )"
             },
-            "ScottPlot": {
+            "Microsoft.Extensions.Hosting": {
               "target": "Package",
-              "version": "[4.1.67, )"
+              "version": "[7.0.1, )"
+            },
+            "Microsoft.Extensions.Logging": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "OxyPlot.Core": {
+              "target": "Package",
+              "version": "[2.2.0, )"
+            },
+            "OxyPlot.ImageSharp": {
+              "target": "Package",
+              "version": "[2.2.0, )"
+            },
+            "SixLabors.Fonts": {
+              "target": "Package",
+              "version": "[2.1.2, )"
+            },
+            "SixLabors.ImageSharp": {
+              "target": "Package",
+              "version": "[2.1.9, )"
+            },
+            "SixLabors.ImageSharp.Drawing": {
+              "target": "Package",
+              "version": "[1.0.0, )"
             },
             "Swashbuckle.AspNetCore": {
               "target": "Package",
               "version": "[6.4.0, )"
+            },
+            "pythonnet": {
+              "target": "Package",
+              "version": "[3.0.3, )"
             }
           },
           "imports": [

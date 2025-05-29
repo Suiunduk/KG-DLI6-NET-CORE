@@ -2,7 +2,10 @@ using System.Text.Json;
 using KG_DLI6_NET_CORE.Models;
 using MathNet.Numerics;
 using MathNet.Numerics.RootFinding;
-using ScottPlot;
+using OxyPlot;
+using OxyPlot.Axes;
+using OxyPlot.Series;
+using OxyPlot.Annotations;
 
 namespace KG_DLI6_NET_CORE.Services
 {
@@ -12,18 +15,18 @@ namespace KG_DLI6_NET_CORE.Services
         private readonly string _workingPath;
         private readonly string _outputPath;
         
-        // Словарь цветов для областей, аналогичный Python-коду
-        private readonly Dictionary<string, System.Drawing.Color> _regionColors = new()
+        // Словарь цветов для областей
+        private readonly Dictionary<string, OxyColor> _regionColors = new()
         {
-            { "Баткенская область", System.Drawing.Color.Red },
-            { "Бишкекский горкенеш", System.Drawing.Color.Blue },
-            { "Чуйская область", System.Drawing.Color.Green },
-            { "Иссык-Кульская область", System.Drawing.Color.Black },
-            { "Джалал-Абадская область", System.Drawing.Color.Magenta },
-            { "Нарынская область", System.Drawing.Color.Green },
-            { "Ошская область", System.Drawing.Color.Yellow },
-            { "Таласская область", System.Drawing.Color.Cyan },
-            { "Ошский горкенеш", System.Drawing.Color.Black }
+            { "Баткенская обл.", OxyColors.Red },
+            { "Бишкек г.", OxyColors.Blue },
+            { "Чуйская обл.", OxyColors.Green },
+            { "Иссык-Кульская обл.", OxyColors.Black },
+            { "Джалал-Абадская обл.", OxyColors.Magenta },
+            { "Нарынская обл.", OxyColors.Green },
+            { "Ошская обл.", OxyColors.Yellow },
+            { "Таласская обл.", OxyColors.Cyan },
+            { "Ош г.", OxyColors.Black }
         };
 
         public BudgetRebalancingService(ILogger<BudgetRebalancingService> logger)
@@ -33,7 +36,6 @@ namespace KG_DLI6_NET_CORE.Services
             _workingPath = Path.Combine(Directory.GetCurrentDirectory(), "working");
             _outputPath = Path.Combine(Directory.GetCurrentDirectory(), "output");
             
-            // Создаем директории, если они не существуют
             Directory.CreateDirectory(_workingPath);
             Directory.CreateDirectory(_outputPath);
         }
@@ -136,7 +138,7 @@ namespace KG_DLI6_NET_CORE.Services
             result.ExcessTotal = excessTotal;
             
             // Создание графика влияния на бюджет
-            await CreateBudgetImpactGraphAsync(result, geokName);
+            await CreateBudgetImpactGraphAsync(result.Data.Values.ToList(), geokName);
             
             _logger.LogInformation("Ребалансировка бюджета завершена");
             
@@ -182,76 +184,98 @@ namespace KG_DLI6_NET_CORE.Services
             return upMaxValue;
         }
         
-        private async Task CreateBudgetImpactGraphAsync(RebalancingResult result, string geokName)
+        private async Task CreateBudgetImpactGraphAsync(List<RebalancedBudgetData> results, string geokName)
         {
-            _logger.LogInformation($"Создание графика влияния на бюджет для {geokName} с ребалансировкой");
+            _logger.LogInformation("Создание графика влияния на бюджет для {GeokName}...", geokName);
             
-            var plt = new ScottPlot.Plot(1200, 1800);
-            
-            // Сортировка данных по региону и названию
-            var sortedData = result.Data.Values
-                .OrderBy(x => x.Region)
-                .ThenBy(x => x.NewName)
-                .ToArray();
-            
-            // Получение уникальных регионов для легенды
-            var uniqueRegions = sortedData.Select(w => w.Region).Distinct().ToArray();
-            
-            // Группируем данные по региону
-            var groupedData = sortedData.GroupBy(w => w.Region);
-            
-            // Для каждого региона создаем отдельные столбцы
-            foreach (var group in groupedData)
+            var model = new PlotModel
             {
-                var color = GetColorForRegion(group.Key);
-                var regionItems = group.ToArray();
-                
-                for (int i = 0; i < regionItems.Length; i++)
-                {
-                    // Найдем индекс элемента в общем массиве
-                    int index = Array.IndexOf(sortedData, regionItems[i]);
-                    if (index >= 0)
-                    {
-                        double[] barPositions = new double[] { index };
-                        double[] barValues = new double[] { regionItems[i].ImpactAdj };
-                        var bar = plt.AddBar(barValues, barPositions);
-                        bar.Color = color;
-                    }
-                }
-                
-                // Добавляем элемент в легенду
-                plt.Legend(true);
-            }
-            
+                Title = $"Влияние на бюджет ({geokName})",
+                TitleFontSize = 16,
+                TitleFontWeight = FontWeights.Bold,
+                PlotAreaBorderThickness = new OxyThickness(1),
+                PlotAreaBorderColor = OxyColors.Black,
+                Background = OxyColors.White,
+                TextColor = OxyColors.Black
+            };
+
             // Настройка осей
-            double[] positions = Enumerable.Range(0, sortedData.Length).Select(i => (double)i).ToArray();
-            plt.XAxis.ManualTickPositions(positions, sortedData.Select(w => w.NewName).ToArray());
-            plt.XAxis.TickLabelStyle(rotation: 45, fontSize: 8);
-            plt.XAxis.Label("Медицинские организации");
-            
-            plt.YAxis.Label("% от первоначального бюджета");
-            plt.SetAxisLimits(yMin: -20, yMax: 20);
-            
-            // Добавление вертикальных линий
-            plt.AddVerticalLine(0, System.Drawing.Color.Black, 1, LineStyle.Solid);
-            plt.AddVerticalLine(-result.DownMaxPercentage, System.Drawing.Color.Red, 1, LineStyle.Solid);
-            plt.AddVerticalLine(result.UpMaxPercentage, System.Drawing.Color.Green, 1, LineStyle.Solid);
-            
-            // Добавление заголовка
-            plt.Title($"Влияние половозрастнои корректировки и {geokName} на бюджет оз с ребалансировкой");
-            
+            var xAxis = new LinearAxis
+            {
+                Position = AxisPosition.Bottom,
+                Title = "Отклонение бюджета (%)",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                Minimum = -100,
+                Maximum = 100,
+                MajorStep = 20,
+                MinorStep = 5,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black,
+                ExtraGridlines = new double[] { 0 },
+                ExtraGridlineStyle = LineStyle.Solid,
+                ExtraGridlineColor = OxyColors.Black,
+                ExtraGridlineThickness = 1
+            };
+
+            var yAxis = new CategoryAxis
+            {
+                Position = AxisPosition.Left,
+                Title = "Медицинские организации",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                AxisTitleDistance = 10,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColors.LightGray,
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColors.LightGray,
+                TickStyle = TickStyle.Outside,
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            model.Axes.Add(xAxis);
+            model.Axes.Add(yAxis);
+
+            // Создание серии
+            var series = new BarSeries
+            {
+                Title = "Отклонения",
+                FillColor = OxyColors.SteelBlue,
+                StrokeColor = OxyColors.Black,
+                StrokeThickness = 1,
+                BarWidth = 1
+            };
+
+            // Добавление данных
+            foreach (var item in results.OrderBy(d => d.NewName))
+            {
+                series.Items.Add(new BarItem(item.ImpactAdj, 1));
+                yAxis.Labels.Add(item.NewName);
+            }
+
+            model.Series.Add(series);
+
             // Сохранение графика
-            var outputPath = Path.Combine(_outputPath, $"Fig8.budget impact of sex-age adjustment with {geokName} and rebalancing.png");
-            plt.SaveFig(outputPath);
-            
+            var outputPath = Path.Combine(_outputPath, $"budget_impact_{geokName}.png");
+            using (var stream = File.Create(outputPath))
+            {
+                var pngExporter = new OxyPlot.ImageSharp.PngExporter(1200, 1800);
+                pngExporter.Export(model, stream);
+            }
+
             _logger.LogInformation($"График влияния на бюджет сохранен в: {outputPath}");
         }
         
-        private System.Drawing.Color GetColorForRegion(string region)
+        private OxyColor GetColorForRegion(string region)
         {
-            return _regionColors.ContainsKey(region) 
-                ? _regionColors[region] 
-                : System.Drawing.Color.Gray; // Цвет по умолчанию
+            return _regionColors.TryGetValue(region, out var color) ? color : OxyColors.Gray;
         }
     }
     

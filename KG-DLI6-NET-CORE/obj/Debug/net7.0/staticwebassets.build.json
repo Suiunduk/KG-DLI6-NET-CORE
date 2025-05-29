@@ -1,6 +1,6 @@
 {
   "Version": 1,
-  "Hash": "E4OyXRkOGcE6rkxIOjzFGI/HQbu/GQ8tl7ZN7sN+k8k=",
+  "Hash": "618YGf5XROsYoyKVL6dxK50vebaasZSQJwc5tAA00bU=",
   "Source": "KG-DLI6-NET-CORE",
   "BasePath": "_content/KG-DLI6-NET-CORE",
   "Mode": "Default",
@@ -10,7 +10,7 @@
     {
       "Name": "KG-DLI6-NET-CORE/wwwroot",
       "Source": "KG-DLI6-NET-CORE",
-      "ContentRoot": "/Users/master/RiderProjects/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/wwwroot/",
+      "ContentRoot": "/Users/master/Documents/Work/FREELANCE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/wwwroot/",
       "BasePath": "_content/KG-DLI6-NET-CORE",
       "Pattern": "**"
     }
@@ -20,7 +20,7 @@
       "Identity": "/Users/master/.nuget/packages/chartjs.blazor.fork/2.0.2/contentFiles/any/netstandard2.1/wwwroot/ChartJsBlazorInterop.js",
       "SourceId": "KG-DLI6-NET-CORE",
       "SourceType": "Discovered",
-      "ContentRoot": "/Users/master/RiderProjects/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/wwwroot/",
+      "ContentRoot": "/Users/master/Documents/Work/FREELANCE/KG-DLI6-NET-CORE/KG-DLI6-NET-CORE/wwwroot/",
       "BasePath": "_content/KG-DLI6-NET-CORE",
       "RelativePath": "ChartJsBlazorInterop.js",
       "AssetKind": "All",

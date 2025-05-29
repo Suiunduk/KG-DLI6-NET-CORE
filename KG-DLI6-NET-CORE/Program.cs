@@ -25,6 +25,12 @@ builder.Services.AddScoped<BudgetReplicationService>();
 builder.Services.AddScoped<GeoService>();
 builder.Services.AddScoped<BudgetSimulationService>();
 builder.Services.AddScoped<BudgetRebalancingService>();
+builder.Services.AddScoped<HealthcareOrganizationService>();
+builder.Services.AddScoped<HealthcareDataEnrichmentService>();
+builder.Services.AddScoped<DistanceCalculationService>();
+builder.Services.AddScoped<GeoScenarioService>();
+builder.Services.AddScoped<CensusDataService>();
+builder.Services.AddScoped<HealthFacilityDataService>();
 
 var app = builder.Build();
 
@@ -40,6 +46,7 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+
 
 // Создание директорий для работы приложения
 var originalPath = Path.Combine(Directory.GetCurrentDirectory(), "original");
@@ -57,5 +64,7 @@ app.UseStaticFiles(new StaticFileOptions
     FileProvider = new PhysicalFileProvider(outputPath),
     RequestPath = "/output"
 });
+
+AppContext.SetSwitch("System.Drawing.EnableUnixSupport", true);
 
 app.Run();

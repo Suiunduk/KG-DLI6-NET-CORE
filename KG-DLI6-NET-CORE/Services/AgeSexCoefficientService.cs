@@ -1,6 +1,18 @@
-using System.Text.Json;
-using ClosedXML.Excel;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using KG_DLI6_NET_CORE.Models;
+using Microsoft.Extensions.Logging;
+using OfficeOpenXml;
+using OxyPlot;
+using OxyPlot.Axes;
+using OxyPlot.Series;
+using OxyPlot.Annotations;
+using System.Text.Json;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 
 namespace KG_DLI6_NET_CORE.Services
 {
@@ -13,184 +25,405 @@ namespace KG_DLI6_NET_CORE.Services
         public AgeSexCoefficientService(ILogger<AgeSexCoefficientService> logger)
         {
             _logger = logger;
-            
             _workingPath = Path.Combine(Directory.GetCurrentDirectory(), "working");
             _outputPath = Path.Combine(Directory.GetCurrentDirectory(), "output");
-            
-            // Создаем директории, если они не существуют
-            Directory.CreateDirectory(_workingPath);
-            Directory.CreateDirectory(_outputPath);
+
+            if (!Directory.Exists(_workingPath))
+                Directory.CreateDirectory(_workingPath);
+            if (!Directory.Exists(_outputPath))
+                Directory.CreateDirectory(_outputPath);
         }
-        
-        public async Task CalculateAgeSexCoefficientsAsync()
+
+        public async Task<List<AgeSexCoefficient>> CalculateAgeSexCoefficientsAsync()
         {
             _logger.LogInformation("Начало расчета возрастно-половых коэффициентов");
-            
-            // Загрузка данных
-            var mpop = await LoadDataAsync<Dictionary<int, Dictionary<int, double>>>("mpop");
-            var fpop = await LoadDataAsync<Dictionary<int, Dictionary<int, double>>>("fpop");
-            var mvisits = await LoadDataAsync<Dictionary<int, Dictionary<int, double>>>("mvisits");
-            var fvisits = await LoadDataAsync<Dictionary<int, Dictionary<int, double>>>("fvisits");
-            
-            // Расчет коэффициентов
-            var (coeff, mcoeff, fcoeff, coeffsqu) = CalculateCoefficients(mpop, fpop, mvisits, fvisits);
-            
-            // Сохранение коэффициентов
-            await SaveDataAsync(coeff, "coeff");
-            await SaveDataAsync(mcoeff, "mcoeff");
-            await SaveDataAsync(fcoeff, "fcoeff");
-            await SaveDataAsync(coeffsqu, "coeffsqu");
-            
-            // Экспорт в Excel
-            await ExportToExcelAsync(coeffsqu);
-            
-            // Создание графика здесь не реализовано - для этого можно использовать 
-            // библиотеку для работы с графиками, например, LiveCharts2 или ScottPlot
-            
-            _logger.LogInformation("Расчет возрастно-половых коэффициентов завершен");
+
+            try
+            {
+                // Загрузка данных
+                var malePopulation = await LoadDataAsync<Dictionary<int, Dictionary<int, double>>>("mpop");
+                var femalePopulation = await LoadDataAsync<Dictionary<int, Dictionary<int, double>>>("fpop");
+                var maleVisits = await LoadDataAsync<Dictionary<int, Dictionary<int, double>>>("mvisits");
+                var femaleVisits = await LoadDataAsync<Dictionary<int, Dictionary<int, double>>>("fvisits");
+
+                if (malePopulation == null || femalePopulation == null || 
+                    maleVisits == null || femaleVisits == null)
+                {
+                    throw new InvalidOperationException("Не удалось загрузить данные о населении или посещениях");
+                }
+
+                // Расчет общего количества посещений и населения
+                var totalVisits = SumAllValues(maleVisits) + SumAllValues(femaleVisits);
+                var totalPopulation = SumAllValues(malePopulation) + SumAllValues(femalePopulation);
+                
+                if (totalPopulation == 0)
+                {
+                    throw new InvalidOperationException("Общая численность населения равна нулю");
+                }
+
+                var visitsPerCapita = totalVisits / totalPopulation;
+                _logger.LogInformation($"Среднее количество посещений на душу населения: {visitsPerCapita:F2}");
+
+                // Расчет сумм по возрастам
+                var maleVisitSums = CalculateAgeSums(maleVisits);
+                var femaleVisitSums = CalculateAgeSums(femaleVisits);
+                var malePopulationSums = CalculateAgeSums(malePopulation);
+                var femalePopulationSums = CalculateAgeSums(femalePopulation);
+
+                // Расчет коэффициентов
+                var coefficients = new List<AgeSexCoefficient>();
+                var maleCoefficients = new Dictionary<int, double>();
+                var femaleCoefficients = new Dictionary<int, double>();
+
+                // Для мужчин
+                for (int age = 0; age < 100; age++)
+                {
+                    if (malePopulationSums.ContainsKey(age) && malePopulationSums[age] > 0)
+                    {
+                        var maleCoeff = (maleVisitSums[age] / malePopulationSums[age]) / visitsPerCapita;
+                        coefficients.Add(new AgeSexCoefficient
+                        {
+                            Age = age.ToString(),
+                            Sex = "М",
+                            Coefficient = maleCoeff
+                        });
+                        maleCoefficients[age] = maleCoeff;
+                    }
+                }
+
+                // Для женщин
+                for (int age = 0; age < 100; age++)
+                {
+                    if (femalePopulationSums.ContainsKey(age) && femalePopulationSums[age] > 0)
+                    {
+                        var femaleCoeff = (femaleVisitSums[age] / femalePopulationSums[age]) / visitsPerCapita;
+                        coefficients.Add(new AgeSexCoefficient
+                        {
+                            Age = age.ToString(),
+                            Sex = "Ж",
+                            Coefficient = femaleCoeff
+                        });
+                        femaleCoefficients[age] = femaleCoeff;
+                    }
+                }
+
+                // Сохранение результатов
+                await SaveResultsAsync(coefficients, maleCoefficients, femaleCoefficients);
+                
+                // Генерация графика
+                await GenerateGraphAsync(coefficients);
+
+                _logger.LogInformation($"Завершен расчет возрастно-половых коэффициентов. Всего записей: {coefficients.Count}");
+                return coefficients;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при расчете возрастно-половых коэффициентов");
+                throw;
+            }
         }
-        
+
+        private Dictionary<int, double> CalculateAgeSums(Dictionary<int, Dictionary<int, double>> data)
+        {
+            var sums = new Dictionary<int, double>();
+            foreach (var age in data.Keys)
+            {
+                sums[age] = data[age].Values.Sum();
+            }
+            return sums;
+        }
+
         private async Task<T> LoadDataAsync<T>(string fileName)
         {
             var filePath = Path.Combine(_workingPath, fileName);
-            _logger.LogInformation($"Загрузка данных из: {filePath}");
-            
             if (!File.Exists(filePath))
             {
-                _logger.LogError($"Файл не найден: {filePath}");
-                throw new FileNotFoundException($"Файл не найден: {filePath}");
+                throw new FileNotFoundException($"Файл {fileName} не найден");
             }
-            
+
             var json = await File.ReadAllTextAsync(filePath);
             return JsonSerializer.Deserialize<T>(json);
         }
-        
-        private (Dictionary<int, double>, Dictionary<int, double>, Dictionary<int, double>, Dictionary<int, Dictionary<string, double>>) 
-        CalculateCoefficients(
-            Dictionary<int, Dictionary<int, double>> mpop, 
-            Dictionary<int, Dictionary<int, double>> fpop, 
-            Dictionary<int, Dictionary<int, double>> mvisits, 
-            Dictionary<int, Dictionary<int, double>> fvisits)
+
+        private async Task SaveResultsAsync(
+            List<AgeSexCoefficient> coefficients,
+            Dictionary<int, double> maleCoefficients,
+            Dictionary<int, double> femaleCoefficients)
         {
-            // Общая сумма посещений и населения
-            double Vall = SumAllValues(mvisits) + SumAllValues(fvisits);
-            double Pall = SumAllValues(mpop) + SumAllValues(fpop);
-            double vpc_all = Vall / Pall;
-            
-            _logger.LogInformation($"Количество посещений на душу населения во всем наборе данных: {vpc_all}");
-            
-            // Суммы посещений и населения по возрастам
-            var Vmsum = SumByAge(mvisits);
-            var Vfsum = SumByAge(fvisits);
-            var Pmsum = SumByAge(mpop);
-            var Pfsum = SumByAge(fpop);
-            
-            // Расчет коэффициентов
-            var mcoeff = new Dictionary<int, double>();
-            var fcoeff = new Dictionary<int, double>();
-            
+            // Сохранение в JSON
+            var json = JsonSerializer.Serialize(coefficients);
+            await File.WriteAllTextAsync(Path.Combine(_workingPath, "age_sex_coefficients.json"), json);
+
+            // Сохранение коэффициентов для мужского населения
+            var maleCoefficientsJson = JsonSerializer.Serialize(maleCoefficients);
+            await File.WriteAllTextAsync(Path.Combine(_workingPath, "mcoeff"), maleCoefficientsJson);
+
+            // Сохранение коэффициентов для женского населения
+            var femaleCoefficientsJson = JsonSerializer.Serialize(femaleCoefficients);
+            await File.WriteAllTextAsync(Path.Combine(_workingPath, "fcoeff"), femaleCoefficientsJson);
+
+            // Сохранение объединенных коэффициентов
+            var combinedCoefficients = new Dictionary<int, Dictionary<string, double>>();
             for (int age = 0; age < 100; age++)
             {
-                double mcoeffValue = (Pmsum[age] > 0) ? (Vmsum[age] / Pmsum[age]) / vpc_all : 0;
-                double fcoeffValue = (Pfsum[age] > 0) ? (Vfsum[age] / Pfsum[age]) / vpc_all : 0;
+                combinedCoefficients[age] = new Dictionary<string, double>();
+                if (maleCoefficients.ContainsKey(age))
+                    combinedCoefficients[age]["mcoeff"] = maleCoefficients[age];
+                if (femaleCoefficients.ContainsKey(age))
+                    combinedCoefficients[age]["fcoeff"] = femaleCoefficients[age];
+            }
+            var combinedJson = JsonSerializer.Serialize(combinedCoefficients);
+            await File.WriteAllTextAsync(Path.Combine(_workingPath, "coeffsqu"), combinedJson);
+
+            // Сохранение в Excel
+            var excelPath = Path.Combine(_outputPath, "ascoeff.xlsx");
+            using (var package = new ExcelPackage(new FileInfo(excelPath)))
+            {
+                var worksheet = package.Workbook.Worksheets.Add("Коэффициенты");
                 
-                mcoeff[age] = mcoeffValue;
-                fcoeff[age] = fcoeffValue;
-            }
-            
-            // Объединение коэффициентов в один словарь
-            var coeff = new Dictionary<int, double>();
-            for (int age = 0; age < 100; age++)
-            {
-                coeff[age] = mcoeff[age];
-                coeff[age + 100] = fcoeff[age];
-            }
-            
-            // Создание матрицы с коэффициентами (мужчины и женщины в разных столбцах)
-            var coeffsqu = new Dictionary<int, Dictionary<string, double>>();
-            for (int age = 0; age < 100; age++)
-            {
-                coeffsqu[age] = new Dictionary<string, double>
+                // Заголовки
+                worksheet.Cells[1, 1].Value = "Возраст";
+                worksheet.Cells[1, 2].Value = "Мужчины";
+                worksheet.Cells[1, 3].Value = "Женщины";
+                
+                // Данные
+                for (int age = 0; age < 100; age++)
                 {
-                    ["mcoeff"] = mcoeff[age],
-                    ["fcoeff"] = fcoeff[age]
-                };
+                    worksheet.Cells[age + 2, 1].Value = age;
+                    if (maleCoefficients.ContainsKey(age))
+                        worksheet.Cells[age + 2, 2].Value = maleCoefficients[age];
+                    if (femaleCoefficients.ContainsKey(age))
+                        worksheet.Cells[age + 2, 3].Value = femaleCoefficients[age];
+                }
+                
+                await package.SaveAsync();
             }
             
-            return (coeff, mcoeff, fcoeff, coeffsqu);
+            _logger.LogInformation($"Результаты сохранены в файлы age_sex_coefficients.json, mcoeff, fcoeff, coeffsqu и ascoeff.xlsx");
         }
-        
+
+        private async Task GenerateGraphAsync(List<AgeSexCoefficient> coefficients)
+        {
+            _logger.LogInformation("Создание графика половозрастных коэффициентов...");
+
+            // Создаем два отдельных графика
+            var plotModelMale = new PlotModel
+            {
+                Title = "mcoeff",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                PlotAreaBorderThickness = new OxyThickness(1),
+                PlotAreaBorderColor = OxyColors.Black,
+                Background = OxyColors.White,
+                TextColor = OxyColors.Black,
+                PlotMargins = new OxyThickness(60, 40, 20, 40)
+            };
+
+            var plotModelFemale = new PlotModel
+            {
+                Title = "fcoeff",
+                TitleFontSize = 14,
+                TitleFontWeight = FontWeights.Bold,
+                PlotAreaBorderThickness = new OxyThickness(1),
+                PlotAreaBorderColor = OxyColors.Black,
+                Background = OxyColors.White,
+                TextColor = OxyColors.Black,
+                PlotMargins = new OxyThickness(60, 40, 20, 40)
+            };
+
+            // Настройка осей для мужского графика
+            var maleYAxis = new LinearAxis 
+            { 
+                Position = AxisPosition.Left,
+                Minimum = 0,
+                Maximum = 8,
+                MajorStep = 2,
+                MinorStep = 1,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColor.FromRgb(211, 211, 211),
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColor.FromRgb(211, 211, 211),
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            var maleXAxis = new LinearAxis 
+            { 
+                Position = AxisPosition.Bottom,
+                Minimum = 0,
+                Maximum = 100,
+                MajorStep = 20,
+                MinorStep = 5,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColor.FromRgb(211, 211, 211),
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColor.FromRgb(211, 211, 211),
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            // Настройка осей для женского графика
+            var femaleYAxis = new LinearAxis 
+            { 
+                Position = AxisPosition.Left,
+                Minimum = 0,
+                Maximum = 8,
+                MajorStep = 2,
+                MinorStep = 1,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColor.FromRgb(211, 211, 211),
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColor.FromRgb(211, 211, 211),
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            var femaleXAxis = new LinearAxis 
+            { 
+                Position = AxisPosition.Bottom,
+                Title = "Age / Возраст",
+                Minimum = 0,
+                Maximum = 100,
+                MajorStep = 20,
+                MinorStep = 5,
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColor.FromRgb(211, 211, 211),
+                MinorGridlineStyle = LineStyle.Dot,
+                MinorGridlineColor = OxyColor.FromRgb(211, 211, 211),
+                AxislineStyle = LineStyle.Solid,
+                AxislineColor = OxyColors.Black
+            };
+
+            plotModelMale.Axes.Add(maleYAxis);
+            plotModelMale.Axes.Add(maleXAxis);
+            plotModelFemale.Axes.Add(femaleYAxis);
+            plotModelFemale.Axes.Add(femaleXAxis);
+
+            // Создаем серии для мужчин и женщин
+            var maleSeries = new LineSeries 
+            {
+                Color = OxyColor.FromRgb(31, 119, 180), // Синий цвет как в matplotlib
+                StrokeThickness = 1,
+                MarkerSize = 0
+            };
+
+            var femaleSeries = new LineSeries 
+            {
+                Color = OxyColor.FromRgb(255, 127, 14), // Оранжевый цвет как в matplotlib
+                StrokeThickness = 1,
+                MarkerSize = 0
+            };
+
+            // Добавляем данные
+            var maleCoeffs = coefficients.Where(c => c.Sex == "М")
+                .OrderBy(c => int.Parse(c.Age))
+                .ToList();
+
+            var femaleCoeffs = coefficients.Where(c => c.Sex == "Ж")
+                .OrderBy(c => int.Parse(c.Age))
+                .ToList();
+
+            foreach (var coeff in maleCoeffs)
+            {
+                maleSeries.Points.Add(new DataPoint(double.Parse(coeff.Age), coeff.Coefficient));
+            }
+
+            foreach (var coeff in femaleCoeffs)
+            {
+                femaleSeries.Points.Add(new DataPoint(double.Parse(coeff.Age), coeff.Coefficient));
+            }
+
+            // Заполняем область под графиком
+            var maleAreaSeries = new AreaSeries 
+            {
+                Color = OxyColor.FromRgb(31, 119, 180),
+                Fill = OxyColor.FromRgb(31, 119, 180)
+            };
+            foreach (var point in maleSeries.Points)
+            {
+                maleAreaSeries.Points.Add(point);
+            }
+
+            var femaleAreaSeries = new AreaSeries 
+            {
+                Color = OxyColor.FromRgb(255, 127, 14),
+                Fill = OxyColor.FromRgb(255, 127, 14)
+            };
+            foreach (var point in femaleSeries.Points)
+            {
+                femaleAreaSeries.Points.Add(point);
+            }
+
+            plotModelMale.Series.Add(maleAreaSeries);
+            plotModelFemale.Series.Add(femaleAreaSeries);
+
+            // Создаем общий заголовок
+            var titleModel = new PlotModel
+            {
+                Title = "Age and sex coefficients / половозрастные коэффициенты (2022)",
+                TitleFontSize = 20,
+                TitleFontWeight = FontWeights.Bold,
+                Background = OxyColors.White
+            };
+
+            // Сохранение графиков
+            var outputPath = Path.Combine(_outputPath, "Fig2-AgeSexCoefficients.png");
+            
+            // Экспортируем каждый график отдельно в память
+            byte[] titleImageBytes;
+            byte[] maleImageBytes;
+            byte[] femaleImageBytes;
+
+            var titleExporter = new OxyPlot.ImageSharp.PngExporter(1100, 50);
+            var graphExporter = new OxyPlot.ImageSharp.PngExporter(1100, 225);
+
+            using (var titleStream = new MemoryStream())
+            {
+                titleExporter.Export(titleModel, titleStream);
+                titleImageBytes = titleStream.ToArray();
+            }
+
+            using (var maleStream = new MemoryStream())
+            {
+                graphExporter.Export(plotModelMale, maleStream);
+                maleImageBytes = maleStream.ToArray();
+            }
+
+            using (var femaleStream = new MemoryStream())
+            {
+                graphExporter.Export(plotModelFemale, femaleStream);
+                femaleImageBytes = femaleStream.ToArray();
+            }
+
+            // Создаем и сохраняем финальное изображение
+            using (var finalImage = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(1100, 500))
+            using (var titleImage = SixLabors.ImageSharp.Image.Load(titleImageBytes))
+            using (var maleImage = SixLabors.ImageSharp.Image.Load(maleImageBytes))
+            using (var femaleImage = SixLabors.ImageSharp.Image.Load(femaleImageBytes))
+            {
+                finalImage.Mutate(ctx => ctx
+                    .DrawImage(titleImage, new SixLabors.ImageSharp.Point(0, 0), 1f)
+                    .DrawImage(maleImage, new SixLabors.ImageSharp.Point(0, 50), 1f)
+                    .DrawImage(femaleImage, new SixLabors.ImageSharp.Point(0, 275), 1f));
+
+                // Сохраняем с использованием нового потока
+                using (var outputStream = File.Create(outputPath))
+                {
+                    finalImage.Save(outputStream, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
+                }
+            }
+            
+            _logger.LogInformation("График сохранен в {OutputPath}", outputPath);
+        }
+
         private double SumAllValues(Dictionary<int, Dictionary<int, double>> data)
         {
             double sum = 0;
             foreach (var ageDict in data.Values)
             {
-                foreach (var value in ageDict.Values)
-                {
-                    sum += value;
-                }
+                sum += ageDict.Values.Sum();
             }
             return sum;
         }
-        
-        private Dictionary<int, double> SumByAge(Dictionary<int, Dictionary<int, double>> data)
-        {
-            var result = new Dictionary<int, double>();
-            
-            for (int age = 0; age < 100; age++)
-            {
-                if (data.ContainsKey(age))
-                {
-                    result[age] = data[age].Values.Sum();
-                }
-                else
-                {
-                    result[age] = 0;
-                }
-            }
-            
-            return result;
-        }
-        
-        private async Task SaveDataAsync<T>(T data, string fileName)
-        {
-            var filePath = Path.Combine(_workingPath, fileName);
-            _logger.LogInformation($"Сохранение данных в: {filePath}");
-            
-            string json = JsonSerializer.Serialize(data);
-            await File.WriteAllTextAsync(filePath, json);
-        }
-        
-        private async Task ExportToExcelAsync(Dictionary<int, Dictionary<string, double>> coeffsqu)
-        {
-            var filePath = Path.Combine(_outputPath, "ascoeff.xlsx");
-            _logger.LogInformation($"Экспорт в Excel: {filePath}");
-            
-            using (var workbook = new XLWorkbook())
-            {
-                var worksheet = workbook.Worksheets.Add("Age-Sex Coefficients");
-                
-                // Добавление заголовков
-                worksheet.Cell(1, 1).Value = "Age";
-                worksheet.Cell(1, 2).Value = "mcoeff";
-                worksheet.Cell(1, 3).Value = "fcoeff";
-                
-                // Добавление данных
-                int row = 2;
-                foreach (var kvp in coeffsqu.OrderBy(k => k.Key))
-                {
-                    worksheet.Cell(row, 1).Value = kvp.Key;
-                    worksheet.Cell(row, 2).Value = kvp.Value["mcoeff"];
-                    worksheet.Cell(row, 3).Value = kvp.Value["fcoeff"];
-                    row++;
-                }
-                
-                // Автоподбор ширины столбцов
-                worksheet.Columns().AdjustToContents();
-                
-                // Сохранение файла
-                workbook.SaveAs(filePath);
-            }
-        }
     }
-}
+} 
