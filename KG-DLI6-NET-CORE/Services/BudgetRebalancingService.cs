@@ -162,6 +162,8 @@ namespace KG_DLI6_NET_CORE.Services
         
         private double FindBudgetNeutralUpMax(SimulationData[] data, string budgetNewField, double shortfallTotal, double initialGuess)
         {
+            _logger.LogInformation($"Поиск бюджетно-нейтрального upmax. Начальное значение: {initialGuess}, Общая недостача: {shortfallTotal}");
+
             // Функция для поиска корня уравнения
             Func<double, double> equation = upmax =>
             {
@@ -171,17 +173,71 @@ namespace KG_DLI6_NET_CORE.Services
                     double budgetOld = item.ЦСМ_ГСВ_2023 * 1000;
                     double budgetNew = item.GetNewBudget(budgetNewField);
                     double excess = budgetNew <= (1 + upmax) * budgetOld ? 0 : budgetNew - (1 + upmax) * budgetOld;
-                    
                     sum += excess;
                 }
-                
                 return sum - shortfallTotal;
             };
-            
-            // Используем алгоритм Ньютона-Рафсона для поиска корня
-            double upMaxValue = Brent.FindRoot(equation, 0, 2 * initialGuess, 1e-6);
-            
-            return upMaxValue;
+
+            try
+            {
+                // Проверяем значения на границах
+                double lowerValue = equation(0);
+                double upperValue = equation(2 * initialGuess);
+                
+                _logger.LogInformation($"Значение функции при upmax=0: {lowerValue}");
+                _logger.LogInformation($"Значение функции при upmax={2 * initialGuess}: {upperValue}");
+
+                // Если знаки разные, используем метод Брента
+                if (Math.Sign(lowerValue) != Math.Sign(upperValue))
+                {
+                    return Brent.FindRoot(equation, 0, 2 * initialGuess, 1e-6, 100);
+                }
+
+                // Если знаки одинаковые, используем метод бисекции с расширением интервала
+                double lower = 0;
+                double upper = 2 * initialGuess;
+                int maxAttempts = 10;
+
+                while (Math.Sign(equation(lower)) == Math.Sign(equation(upper)) && maxAttempts > 0)
+                {
+                    upper *= 2;
+                    maxAttempts--;
+                    _logger.LogInformation($"Расширение интервала поиска. Новая верхняя граница: {upper}");
+                }
+
+                if (maxAttempts == 0)
+                {
+                    _logger.LogWarning("Не удалось найти интервал с разными знаками. Возвращаем начальное значение.");
+                    return initialGuess;
+                }
+
+                // Теперь используем метод Брента с расширенным интервалом
+                return Brent.FindRoot(equation, lower, upper, 1e-6, 100);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при поиске бюджетно-нейтрального upmax");
+                
+                // В случае ошибки возвращаем приближенное значение на основе линейной интерполяции
+                double upmax = 0;
+                double step = 0.1;
+                double bestDiff = double.MaxValue;
+                double bestUpmax = initialGuess;
+
+                while (upmax <= 2 * initialGuess)
+                {
+                    double currentDiff = Math.Abs(equation(upmax));
+                    if (currentDiff < bestDiff)
+                    {
+                        bestDiff = currentDiff;
+                        bestUpmax = upmax;
+                    }
+                    upmax += step;
+                }
+
+                _logger.LogInformation($"Использовано приближенное значение upmax: {bestUpmax}");
+                return bestUpmax;
+            }
         }
         
         private async Task CreateBudgetImpactGraphAsync(List<RebalancedBudgetData> results, string geokName)
