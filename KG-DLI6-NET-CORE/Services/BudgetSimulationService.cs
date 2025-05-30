@@ -167,13 +167,13 @@ namespace KG_DLI6_NET_CORE.Services
             string geokName = $"geok_{geokType}";
             
             // 1. Создание диаграммы рассеяния для сравнения коэффициентов
-            await CreateScatterPlotAsync(data, geokName);
+            //await CreateScatterPlotAsync(data, geokName);
             
             // 2. Расчет скорректированного подушевого норматива и базового бюджета
             await CalculateAdjustedRatesAndBudgetsAsync(data, geokName);
             
             // 3. Графическое представление влияния на бюджет
-            await CreateBudgetImpactGraphAsync(data, geokName);
+            //await CreateBudgetImpactGraphAsync(data, geokName);
             
             // 4. Создание гистограммы распределения
             await CreateHistogramAsync(data, geokName);
