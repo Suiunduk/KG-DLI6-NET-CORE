@@ -26,6 +26,8 @@ namespace KG_DLI6_NET_CORE.Services
                 Directory.CreateDirectory(_workingPath);
             if (!Directory.Exists(_outputPath))
                 Directory.CreateDirectory(_outputPath);
+            
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         }
 
         public async Task<List<HealthcareOrganization>> ProcessHealthcareOrganizationsAsync()

@@ -26,6 +26,8 @@ namespace KG_DLI6_NET_CORE.Services
                 Directory.CreateDirectory(_workingPath);
             if (!Directory.Exists(_originalPath))
                 Directory.CreateDirectory(_originalPath);
+            
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         }
 
         public async Task<List<CensusData>> ProcessCensusDataAsync()
